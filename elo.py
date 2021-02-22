@@ -1,6 +1,6 @@
 import sqlite3
 
-con = sqlite3.connect('database.sqlite')
+con = sqlite3.connect(r'C:\Users\Luca\PycharmProjects\IntroToAI-Group5-TeamB(football)\database.sqlite')
 cur = con.cursor()
 
 cur.execute("UPDATE Team SET elo=1000")
