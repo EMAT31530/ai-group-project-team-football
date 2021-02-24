@@ -6,23 +6,23 @@ import random
 
 
 
-def eloUpdate(r1, r2, s1, s2, k,goal1,goal2):  # r1 = team 1 elo, r2 = team 2 elo, s1/2 = 1,0,0.5 depending win/lose/draw
+def eloUpdate(r1, r2, s1, s2, k,goal1,goal2,mult2,mult3,mult4_1,mult4_2,mult4_3):  # r1 = team 1 elo, r2 = team 2 elo, s1/2 = 1,0,0.5 depending win/lose/draw
     if goal1 > goal2:
         if goal1 - goal2 == 2:
-            k = 1.5*k
+            k = mult2*k
         elif goal1 - goal2 == 3:
-            k = 1.75*k
+            k = mult3*k
         elif goal1 - goal2 >= 4:
             N = goal1 - goal2
-            k = k * (0.75 + (N-3)/8)
+            k = k * (mult4_1 + (N-mult4_2)/mult4_3)
     elif goal1 < goal2:
         if goal2 - goal1 == 2:
-            k = 1.5*k
+            k = mult2*k
         elif goal2 - goal1 == 3:
-            k = 1.75*k
+            k = mult3*k
         elif goal2 - goal1 >= 4:
             N = goal2 - goal1
-            k = k * (0.75 + (N-3)/8)
+            k = k * (mult4_1 + (N-mult4_2)/mult4_3)
 
 
     R1 = 10 ** (r1 / 400)
@@ -45,7 +45,7 @@ def percTrainData(i, traindata,k1,k2,k3):
     return k1
 
 
-def train(k, traindata, z,cur):
+def train(k, traindata, z,cur,mult2,mult3,mult4_1,mult4_2,mult4_3):
     if z == 1:
         cur.execute("UPDATE Team SET elo=1000")
     i = 0
@@ -64,7 +64,7 @@ def train(k, traindata, z,cur):
         cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[2],))
         awayTeamElo = cur.fetchall()
 
-        newElos = eloUpdate(homeTeamElo[0][0], awayTeamElo[0][0], s1, s2, k,match[3],match[4])
+        newElos = eloUpdate(homeTeamElo[0][0], awayTeamElo[0][0], s1, s2, k,match[3],match[4],mult2,mult3,mult4_1,mult4_2,mult4_3)
         cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[0], match[1],))
         cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[1], match[2],))
         i += 1
