@@ -72,9 +72,8 @@ for team in away_teams:
 
 
 
+cur.execute(("SELECT season,home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,home_team_elo,away_team_elo,winner FROM Match"))
+match_data = cur.fetchall()
 
-
-
-cur.execute(("SELECT season,home_team_api_id,away_team_api_id,home_team_goal,away_team_goal FROM Match"))
 
 
