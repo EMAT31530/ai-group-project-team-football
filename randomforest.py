@@ -11,7 +11,7 @@ import joblib
 from multiprocessing import cpu_count
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.impute import SimpleImputer
-from sklearn.neural_network import MLPClassifier
+
 
 
 def predict(model, test_features, id=True):
@@ -130,28 +130,28 @@ def main():
 
     threads = cpu_count() - 1
     rf = RandomForestClassifier(n_estimators=350,verbose=1, n_jobs=threads)
-    ml = MLPClassifier(verbose = 1)
+
 
     rf.fit(train_features, train_labels.ravel())
-    ml.fit(train_features,train_labels.ravel())
+
 
     #joblib.dump(ml, r"D:\intro2ai\ai-group-project-team-football\ml.pkl")
 
-    # predictions = rf.predict(test_features)
-    # predictions_prob = rf.predict_proba(test_features)
+
     rf_preds = predict(rf, test_features)
-    ml_preds = ml.predict(test_features)
+
+
 
     print("RF Accuracy: ", metrics.accuracy_score(test_labels, rf_preds))
-    print("ML Accuracy: ", metrics.accuracy_score(test_labels, ml_preds))
 
-    '''
-    feature_importances = pd.DataFrame(rf.feature_importances_,
+
+
+    rf_feature_importances = pd.DataFrame(rf.feature_importances_,
                                        index=feature_list,
                                        columns=['importance']).sort_values('importance', ascending=False)
 
-    print(feature_importances)
-    '''
+    print("RF", rf_feature_importances)
+
 
 
 
