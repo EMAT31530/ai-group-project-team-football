@@ -18,7 +18,9 @@ for match in matches:
     elif away_goal > home_goal:
         cur.execute(f"UPDATE Match SET winner = {away_id} WHERE id = {match_id}")
     elif home_goal == away_goal:
-        cur.execute(f"UPDATE Match SET winner = 0 WHERE id = {match_id}")
+        cur.execute(f"UPDATE Match SET winner = 'draw' WHERE id = {match_id}")
+
+con.commit()
 
 cur.execute("SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match")
 print(cur.fetchall())

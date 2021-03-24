@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import random
+from tqdm import tqdm
+from sklearn import metrics
 
 
 
@@ -13,7 +15,6 @@ def eloUpdate(r1, r2, s1, s2, k,goal1,goal2,mult2,mult3,mult4):  # r1 = team 1 e
         elif goal1 - goal2 == 3:
             k = mult3*k
         elif goal1 - goal2 >= 4:
-            N = goal1 - goal2
             k = k * mult4
     elif goal1 < goal2:
         if goal2 - goal1 == 2:
@@ -21,9 +22,7 @@ def eloUpdate(r1, r2, s1, s2, k,goal1,goal2,mult2,mult3,mult4):  # r1 = team 1 e
         elif goal2 - goal1 == 3:
             k = mult3*k
         elif goal2 - goal1 >= 4:
-            N = goal2 - goal1
             k = k * mult4
-
 
     R1 = 10 ** (r1 / 400)
     R2 = 10 ** (r2 / 400)
@@ -45,29 +44,49 @@ def percTrainData(i, traindata,k1,k2,k3):
     return k1
 
 
-def train(k, traindata, z,cur,mult2,mult3,mult4):
+def train(k, traindata, z,cur,mult2,mult3,mult4,dotqdm = False): #data = [match_1,...,match_n], match = [home_id,away_id,home_goal,away_goal,winner]
     if z == 1:
         cur.execute("UPDATE Team SET elo=1000")
     i = 0
-    for match in traindata:
-        #k = percTrainData(i,traindata,k1,k2,k3)
-        if match[3] == match[4]:
-            s1 = s2 = 0.5
-        elif match[3] > match[4]:
-            s1 = 1
-            s2 = 0
-        else:
-            s1 = 0
-            s2 = 1
-        cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[1],))
-        homeTeamElo = cur.fetchall()
-        cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[2],))
-        awayTeamElo = cur.fetchall()
+    if dotqdm:
+        for match in tqdm(traindata,desc = "Training ELOs", total = len(traindata)):
+            if match[4] == 'draw':
+                s1 = s2 = 0.5
+            elif match[4] == match[0]:
+                s1 = 1
+                s2 = 0
+            elif match[4] == match[1]:
+                s1 = 0
+                s2 = 1
+            cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[0],))
+            homeTeamElo = cur.fetchall()[0][0]
+            cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[1],))
+            awayTeamElo = cur.fetchall()[0][0]
 
-        newElos = eloUpdate(homeTeamElo[0][0], awayTeamElo[0][0], s1, s2, k,match[3],match[4],mult2,mult3,mult4)
-        cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[0], match[1],))
-        cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[1], match[2],))
-        i += 1
+            newElos = eloUpdate(homeTeamElo, awayTeamElo, s1, s2, k, match[2], match[3], mult2, mult3,
+                                mult4)
+            cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[0], match[0],))
+            cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[1], match[1],))
+            i += 1
+    else:
+        for match in traindata:
+            if match[4] == 'draw':
+                s1 = s2 = 0.5
+            elif match[4] == match[0]:
+                s1 = 1
+                s2 = 0
+            elif match[4] == match[1]:
+                s1 = 0
+                s2 = 1
+            cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[0],))
+            homeTeamElo = cur.fetchall()[0][0]
+            cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[1],))
+            awayTeamElo = cur.fetchall()[0][0]
+
+            newElos = eloUpdate(homeTeamElo, awayTeamElo, s1, s2, k,match[2],match[3],mult2,mult3,mult4)
+            cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[0], match[0],))
+            cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[1], match[1],))
+            i += 1
 
 
 def perDiff(val1, val2):
@@ -77,58 +96,36 @@ def perDiff(val1, val2):
     return perDiff
 
 
-def test(testdata, drawThreshold,cur):
-    successCount = 0
-    count = 0
-    predWins = 0
-    predLosses = 0
-    predDraws = 0
-    wins = 0
-    losses = 0
-    draws = 0
-    randCount = 0
-    for match in testdata:
+def test(testdata, drawThreshold,cur):  # testdata = [match_1,...,match_n], match = [home_id,away_id,home_goal,away_goal,winner]
 
-        cur.execute("SELECT elo FROM Team WHERE team_api_id = ?", (match[1],))
+    true = np.empty(shape = len(testdata),dtype=object)
+    predictions = np.empty(shape = len(testdata),dtype=object)
+    i = 0
+    for match in testdata:
+        home_id = str(match[0])
+        away_id = str(match[1])
+        cur.execute("SELECT elo FROM Team WHERE team_api_id = ?", (match[0],))
         homeElo = cur.fetchall()[0][0]
 
-        cur.execute("SELECT elo FROM Team WHERE team_api_id = ?", (match[2],))
+        cur.execute("SELECT elo FROM Team WHERE team_api_id = ?", (match[1],))
         awayElo = cur.fetchall()[0][0]
 
 
         if abs(homeElo - awayElo) < drawThreshold:
-            predDraws += 1
-            pred = 0
+            predictions[i] = home_id
         elif homeElo > awayElo:
-            predWins += 1
-            pred = 1
+            predictions[i] = home_id
         elif homeElo < awayElo:
-            predLosses += 1
-            pred = -1
-        randChoice = randomPred()
-        if match[3] > match[4]:  # home win
-            count += 1
-            wins += 1
-            if randChoice == 1:
-                randCount +=1
-            if pred == 1:
-                successCount += 1
-        elif match[3] < match[4]:  # away win
-            count += 1
-            losses += 1
-            if randChoice == -1:
-                randCount += 1
-            if pred == -1:
-                successCount += 1
-        elif match[3] == match[4]:  # draw
-            count += 1
-            draws += 1
-            if randChoice == 0:
-                randCount +=1
-            if pred == 0:
-                successCount += 1
-    randAcc = (randCount*100)/count
-    accuracy = (successCount * 100) / count
+            predictions[i] = away_id
+
+        if match[4] == match[0]:  # home win
+            true[i] = home_id
+        elif match[4] == match[1]:  # away win
+            true[i] = away_id
+        elif match[4] == 'draw':  # draw
+            true[i] = 'draw'
+        i+=1
+    accuracy = metrics.accuracy_score(true, predictions)
     return accuracy
 
 
