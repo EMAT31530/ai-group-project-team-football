@@ -111,19 +111,21 @@ def main():
 
     model = Sequential()
 
-    model.add(Dense(5000, activation='relu', kernel_initializer='he_normal', input_shape=(n_features,)))
-    model.add(Dropout(0.2))
-    model.add(Dense(3000, activation='relu', kernel_initializer='he_normal'))
-    model.add(Dropout(0.2))
-    model.add(Dense(1500, activation='relu', kernel_initializer='he_normal'))
-    model.add(Dropout(0.2))
-    model.add(Dense(800, activation='relu', kernel_initializer='he_normal'))
-    model.add(Dropout(0.2))
+    model.add(Dense(500, activation='relu', kernel_initializer='he_normal', input_shape=(n_features,)))
+    model.add(Dropout(0.7))
+    model.add(Dense(450, activation='relu', kernel_initializer='he_normal'))
+    model.add(Dropout(0.6))
+    model.add(Dense(400, activation='relu', kernel_initializer='he_normal'))
+    model.add(Dropout(0.6))
+    model.add(Dense(400, activation='relu', kernel_initializer='he_normal'))
+    model.add(Dropout(0.6))
+    model.add(Dense(350, activation='relu', kernel_initializer='he_normal'))
+    model.add(Dropout(0.6))
     model.add(Dense(300, activation='softmax'))
 
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-    model.fit(train_features, train_labels, epochs=100, batch_size=300,verbose=1)
+    model.fit(train_features, train_labels, epochs=200, batch_size=300,verbose=1)
 
     #model.save(r"D:\intro2ai\ai-group-project-team-football\model")
 

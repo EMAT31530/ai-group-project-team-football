@@ -14,28 +14,12 @@ from sklearn.impute import SimpleImputer
 
 
 
-def predict(model, test_features, id=True):
-    classes = model.classes_
-    probs = model.predict_proba(test_features)
-    probPreds = np.empty(shape=np.shape(test_features)[0], dtype=object)
-    i = 0
-    for feat in test_features:
-        home = feat[0]
-        away = feat[1]
-        home_i = np.where(classes == home)
-        away_i = np.where(classes == away)
-        draw_i = np.where(classes == 'draw')
-        probArr = probs[i]
-        home_prob = probArr[home_i]
-        away_prob = probArr[away_i]
-        draw_prob = probArr[draw_i]
-        predChoice = np.array([home, away, 'draw'])
-        predArr = np.array([home_prob, away_prob, draw_prob])
-        pred = predChoice[np.where(predArr == np.max(predArr))[0][0]]
-        probPreds[i] = pred
-
-        i += 1
-    return probPreds
+def predict(model, test_features):
+    lb = joblib.load(r"D:\intro2ai\ai-group-project-team-football\lb.pkl")
+    probs = np.array(model.predict_proba(test_features))[:,:,1]
+    probs = np.transpose(probs)
+    preds = lb.inverse_transform(probs)
+    return preds
 
 
 def optimiseElo(cur, trainMatches, testMatches, maxiter=1000,save = False,savePath = "path", useSavedRes = False, useSavedResPath = "path"):
@@ -159,12 +143,9 @@ def main():
 
 
     rf_preds = predict(rf, test_features)
-
-
+    test_labels = lb.inverse_transform(test_labels)
 
     print("RF Accuracy: ", metrics.accuracy_score(test_labels, rf_preds))
-
-
 
     rf_feature_importances = pd.DataFrame(rf.feature_importances_,
                                        index=feature_list,
