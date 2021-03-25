@@ -22,5 +22,3 @@ for match in matches:
 
 con.commit()
 
-cur.execute("SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match")
-print(cur.fetchall())
