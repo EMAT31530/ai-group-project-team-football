@@ -9,7 +9,7 @@ from sklearn.impute import SimpleImputer
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Dense,Dropout
 from tensorflow.keras.models import save_model,load_model
-
+from tensorflow.keras.callbacks import EarlyStopping
 
 def undummify(df, prefix_sep="_"):
     cols2collapse = {
@@ -103,29 +103,24 @@ def main():
     labels = np.array(labels).astype('float32')
     features = np.array(features).astype('float32')
 
-    train_features, test_features, train_labels, test_labels = train_test_split(features, labels, test_size=0.25,
-                                                                                    random_state=42)
+    train_features, test_features, train_labels, test_labels = train_test_split(features, labels, test_size=0.2)
 
-    joblib.dump(test_features,r"D:\intro2ai\ai-group-project-team-football\test_features.pkl")
+    train_features, val_features, train_labels, val_labels = train_test_split(train_features,train_labels,test_size=0.2)
+
     n_features = train_features.shape[1]
 
     model = Sequential()
+    es_callback = EarlyStopping(monitor='val_loss', patience=3)
 
-    model.add(Dense(500, activation='relu', kernel_initializer='he_normal', input_shape=(n_features,)))
+    model.add(Dense(1000, activation='relu', kernel_initializer='he_normal', input_shape=(n_features,)))
     model.add(Dropout(0.7))
-    model.add(Dense(450, activation='relu', kernel_initializer='he_normal'))
-    model.add(Dropout(0.6))
-    model.add(Dense(400, activation='relu', kernel_initializer='he_normal'))
-    model.add(Dropout(0.6))
-    model.add(Dense(400, activation='relu', kernel_initializer='he_normal'))
-    model.add(Dropout(0.6))
-    model.add(Dense(350, activation='relu', kernel_initializer='he_normal'))
-    model.add(Dropout(0.6))
+    model.add(Dense(800, activation='relu', kernel_initializer='he_normal'))
+    model.add(Dropout(0.7))
     model.add(Dense(300, activation='softmax'))
 
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-    model.fit(train_features, train_labels, epochs=200, batch_size=300,verbose=1)
+    model.fit(train_features, train_labels, epochs=150, batch_size=300,verbose=1,callbacks=[es_callback],validation_data=(val_features,val_labels))
 
     #model.save(r"D:\intro2ai\ai-group-project-team-football\model")
 
