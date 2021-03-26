@@ -12,6 +12,7 @@ from tensorflow.keras.models import save_model,load_model
 from tensorflow.keras.callbacks import EarlyStopping
 from sklearn import metrics
 from multiprocessing import cpu_count
+from tensorflow.keras.optimizers import Adam
 import kerastuner as kt
 
 
@@ -106,34 +107,62 @@ def main():
 
     n_features = train_features.shape[1]
 
-    model = Sequential()
-    es_callback = EarlyStopping(monitor='val_accuracy', patience=3)
+    def model_builder(hp):
+        model = Sequential()
 
-    model.add(Dense(500, activation='relu', kernel_initializer='he_normal', input_shape=(n_features,)))
-    model.add(Dropout(0.4))
-    model.add(Dense(1000, activation='relu', kernel_initializer='he_normal'))
-    model.add(Dropout(0.8))
-    model.add(Dense(400, activation='relu', kernel_initializer='he_normal'))
-    model.add(Dropout(0.3))
-    model.add(Dense(300, activation='softmax'))
+        hp_dense1 = hp.Int('dense1', min_value=100, max_value=1000, step=10)
+        hp_dense2 = hp.Int('dense2', min_value=100, max_value=2000, step=20)
+        hp_dense3 = hp.Int('dense3', min_value=50, max_value=1000, step=10)
 
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        hp_dropout1 = hp.Float('dropout1', min_value=0.1, max_value=0.9, step=0.01)
+        hp_dropout2 = hp.Float('dropout2', min_value=0.1, max_value=0.9, step=0.01)
+        hp_dropout3 = hp.Float('dropout3', min_value=0.1, max_value=0.9, step=0.01)
 
+        hp_learning_rate = hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])
+
+        model.add(Dense(units=hp_dense1, activation='relu', kernel_initializer='he_normal', input_shape=(n_features,)))
+        model.add(Dropout(hp_dropout1))
+        model.add(Dense(units=hp_dense2, activation='relu', kernel_initializer='he_normal'))
+        model.add(Dropout(hp_dropout2))
+        model.add(Dense(units=hp_dense3, activation='relu', kernel_initializer='he_normal'))
+        model.add(Dropout(hp_dropout3))
+        model.add(Dense(300, activation='softmax'))
+
+        model.compile(optimizer=Adam(learning_rate=hp_learning_rate), loss='categorical_crossentropy', metrics=['accuracy'])
+
+        return model
+
+    tuner = kt.Hyperband(model_builder,
+                         objective='val_accuracy',
+                         max_epochs=300,
+                         factor=3,
+                         )
+
+
+    es_callback = EarlyStopping(monitor='val_loss', patience=3)
     threads = cpu_count() - 1
-    model.fit(train_features, train_labels, epochs=51, batch_size=300,verbose=1,callbacks=[es_callback],validation_data=(val_features,val_labels),workers=threads,use_multiprocessing=True)
 
-    #model.save(r"D:\intro2ai\ai-group-project-team-football\model")
+    tuner.search(train_features, train_labels, epochs=300, batch_size=300, verbose=1, callbacks=[es_callback],
+              validation_data=(val_features, val_labels), workers=threads)
 
-    loss, acc = model.evaluate(test_features, test_labels, verbose=1)
-    acc*=100
+    best_hps = tuner.get_best_hyperparameters(num_trials=5)[0]
 
-    base_acc = baseline_accuracy(test_labels,test_features,feature_list,ohe_home,lb)
+    print(f"""
+    dense1 = {best_hps.get('dense1')}\n
+    dense2 = {best_hps.get('dense2')}\n
+    dense3 = {best_hps.get('dense3')}\n
+    drop1 = {best_hps.get('dropout1')}\n
+    drop2 = {best_hps.get('dropout2')}\n
+    drop3 = {best_hps.get('dropout3')}
+    """)
 
-    print('Baseline Accuracy: %.3f' % base_acc)
-    print('Test Accuracy: %.3f' % acc)
-    diff = (acc-base_acc)
-    print('Model better than baseline by: %.3f pp' % diff)
+    model = tuner.hypermodel.build(best_hps)
+    history = model.fit(train_features, train_labels, epochs=300, batch_size=300, verbose=1, callbacks=[es_callback],
+              validation_data=(val_features, val_labels), workers=threads)
 
+    val_acc_per_epoch = history.history['val_accuracy']
+    best_epoch = val_acc_per_epoch.index(max(val_acc_per_epoch)) + 1
+    print('Best epoch: %d' % (best_epoch,))
 
 if __name__ == '__main__':
     main()

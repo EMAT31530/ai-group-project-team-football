@@ -13,6 +13,17 @@ from sklearn.preprocessing import MinMaxScaler,LabelBinarizer
 from sklearn.impute import SimpleImputer
 
 
+def baseline_accuracy(test_labels,test_features,feature_list,ohe_home,lb):
+    test_features_df = pd.DataFrame(test_features, columns=feature_list)
+    home = test_features_df.filter(regex = "(.*)_home")
+
+    true = lb.inverse_transform(test_labels)
+    base_preds = ohe_home.inverse_transform(home.values)
+    base_preds = [pred.replace("_home","") for pred in base_preds]
+
+    baseline_accuracy = metrics.accuracy_score(true,base_preds)*100
+    return baseline_accuracy
+
 
 def predict(model, test_features):
     lb = joblib.load(r"D:\intro2ai\ai-group-project-team-football\lb.pkl")
@@ -24,7 +35,6 @@ def predict(model, test_features):
 
 def optimiseElo(cur, trainMatches, testMatches, maxiter=1000,save = False,savePath = "path", useSavedRes = False, useSavedResPath = "path"):
     cur.execute("UPDATE Team SET elo=1000")
-
     args = (trainMatches, testMatches, cur)
 
     def callback(x, f, context):
@@ -133,7 +143,7 @@ def main():
                                                                                 random_state=42)
 
     threads = cpu_count() - 1
-    rf = RandomForestClassifier(n_estimators=100,verbose=1, n_jobs=threads)
+    rf = RandomForestClassifier(n_estimators=150,verbose=1, n_jobs=threads)
 
 
     rf.fit(train_features, train_labels)
@@ -145,7 +155,13 @@ def main():
     rf_preds = predict(rf, test_features)
     test_labels = lb.inverse_transform(test_labels)
 
-    print("RF Accuracy: ", metrics.accuracy_score(test_labels, rf_preds))
+    base_acc = baseline_accuracy(test_labels, test_features, feature_list, ohe_home, lb)*100
+    acc = metrics.accuracy_score(test_labels, rf_preds)*100
+
+    print('Baseline Accuracy: %.3f' % base_acc)
+    print('RF Accuracy: %.3f' % acc)
+    diff = (acc - base_acc)
+    print('Model better than baseline by: %.3f pp' % diff)
 
     rf_feature_importances = pd.DataFrame(rf.feature_importances_,
                                        index=feature_list,
