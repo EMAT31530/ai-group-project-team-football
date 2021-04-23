@@ -110,15 +110,17 @@ def main():
     def model_builder(hp):
         model = Sequential()
 
-        hp_dense1 = hp.Int('dense1', min_value=100, max_value=1000, step=10)
-        hp_dense2 = hp.Int('dense2', min_value=100, max_value=2000, step=20)
-        hp_dense3 = hp.Int('dense3', min_value=50, max_value=1000, step=10)
+        hp_dense1 = hp.Int('dense1', min_value=10, max_value=3000, step=10)
+        hp_dense2 = hp.Int('dense2', min_value=10, max_value=3000, step=10)
+        hp_dense3 = hp.Int('dense3', min_value=10, max_value=3000, step=10)
 
-        hp_dropout1 = hp.Float('dropout1', min_value=0.1, max_value=0.9, step=0.01)
-        hp_dropout2 = hp.Float('dropout2', min_value=0.1, max_value=0.9, step=0.01)
-        hp_dropout3 = hp.Float('dropout3', min_value=0.1, max_value=0.9, step=0.01)
 
-        hp_learning_rate = hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])
+        hp_dropout1 = hp.Float('dropout1', min_value=0.01, max_value=0.99, step=0.01)
+        hp_dropout2 = hp.Float('dropout2', min_value=0.01, max_value=0.99, step=0.01)
+        hp_dropout3 = hp.Float('dropout3', min_value=0.01, max_value=0.99, step=0.01)
+
+
+        hp_learning_rate = hp.Choice('learning_rate', values=[1e-1,1e-2, 1e-3, 1e-4,1e-5])
 
         model.add(Dense(units=hp_dense1, activation='relu', kernel_initializer='he_normal', input_shape=(n_features,)))
         model.add(Dropout(hp_dropout1))
@@ -126,6 +128,7 @@ def main():
         model.add(Dropout(hp_dropout2))
         model.add(Dense(units=hp_dense3, activation='relu', kernel_initializer='he_normal'))
         model.add(Dropout(hp_dropout3))
+
         model.add(Dense(300, activation='softmax'))
 
         model.compile(optimizer=Adam(learning_rate=hp_learning_rate), loss='categorical_crossentropy', metrics=['accuracy'])
@@ -134,7 +137,7 @@ def main():
 
     tuner = kt.Hyperband(model_builder,
                          objective='val_accuracy',
-                         max_epochs=300,
+                         max_epochs=500,
                          factor=3,
                          )
 
@@ -145,24 +148,37 @@ def main():
     tuner.search(train_features, train_labels, epochs=300, batch_size=300, verbose=1, callbacks=[es_callback],
               validation_data=(val_features, val_labels), workers=threads)
 
-    best_hps = tuner.get_best_hyperparameters(num_trials=5)[0]
-
-    print(f"""
-    dense1 = {best_hps.get('dense1')}\n
-    dense2 = {best_hps.get('dense2')}\n
-    dense3 = {best_hps.get('dense3')}\n
-    drop1 = {best_hps.get('dropout1')}\n
-    drop2 = {best_hps.get('dropout2')}\n
-    drop3 = {best_hps.get('dropout3')}
-    """)
+    best_hps = tuner.get_best_hyperparameters(num_trials=10)[0]
 
     model = tuner.hypermodel.build(best_hps)
     history = model.fit(train_features, train_labels, epochs=300, batch_size=300, verbose=1, callbacks=[es_callback],
-              validation_data=(val_features, val_labels), workers=threads)
+              validation_data=(val_features, val_labels), workers=threads,use_multiprocessing=True)
 
     val_acc_per_epoch = history.history['val_accuracy']
     best_epoch = val_acc_per_epoch.index(max(val_acc_per_epoch)) + 1
+
+    model.fit(train_features, train_labels, epochs=best_epoch, batch_size=300, verbose=1, callbacks=[es_callback],
+              validation_data=(val_features, val_labels), workers=threads,use_multiprocessing=True)
+
+    loss, acc = model.evaluate(test_features, test_labels, verbose=1)
+    acc*=100
+
+    print(f"""
+        dense1 = {best_hps.get('dense1')}\n
+        dense2 = {best_hps.get('dense2')}\n
+       
+        
+        drop1 = {best_hps.get('dropout1')}\n
+        drop2 = {best_hps.get('dropout2')}\n
+        
+        
+        learning_rate = {best_hps.get('learning_rate')}
+        """)
+
     print('Best epoch: %d' % (best_epoch,))
+
+    print('Test Accuracy: %.3f' % acc)
+
 
 if __name__ == '__main__':
     main()

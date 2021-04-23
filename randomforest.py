@@ -13,11 +13,11 @@ from sklearn.preprocessing import MinMaxScaler,LabelBinarizer
 from sklearn.impute import SimpleImputer
 
 
-def baseline_accuracy(test_labels,test_features,feature_list,ohe_home,lb):
+def baseline_accuracy(test_labels,test_features,feature_list,ohe_home):
     test_features_df = pd.DataFrame(test_features, columns=feature_list)
     home = test_features_df.filter(regex = "(.*)_home")
 
-    true = lb.inverse_transform(test_labels)
+    true = test_labels
     base_preds = ohe_home.inverse_transform(home.values)
     base_preds = [pred.replace("_home","") for pred in base_preds]
 
@@ -25,8 +25,7 @@ def baseline_accuracy(test_labels,test_features,feature_list,ohe_home,lb):
     return baseline_accuracy
 
 
-def predict(model, test_features):
-    lb = joblib.load(r"D:\intro2ai\ai-group-project-team-football\lb.pkl")
+def predict(model, test_features,lb):
     probs = np.array(model.predict_proba(test_features))[:,:,1]
     probs = np.transpose(probs)
     preds = lb.inverse_transform(probs)
@@ -79,86 +78,105 @@ def main():
 
     optimiseElo(cur, trainMatches, testMatches, useSavedRes=True, useSavedResPath=resPath)
 
-    cur.execute("SELECT elo,team_api_id FROM TEAM")
-    team_elo_and_id = cur.fetchall()
+    with tqdm(desc = "Data Preprocessing Begin",total=4) as pbar:
 
-    cur.executemany(f"UPDATE Match SET home_team_elo = ? WHERE home_team_api_id = ?", team_elo_and_id)
-    cur.executemany(f"UPDATE Match SET away_team_elo = ? WHERE away_team_api_id = ?", team_elo_and_id)
+        pbar.set_description("Setting Home and Away ELOs")
 
-    cur.execute("SELECT winner,home_team_api_id,away_team_api_id,home_team_elo,away_team_elo FROM Match")
-    match_data = cur.fetchall()
-    matches_df = pd.DataFrame(match_data, columns=["winner", "home_team", "away_team", "home_elo", "away_elo"])
+        cur.execute("SELECT elo,team_api_id FROM TEAM")
+        team_elo_and_id = cur.fetchall()
 
-    cur.execute("SELECT WHH,WHA,WHD FROM Match")
-    gambling_odds = cur.fetchall()
-    imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean')
-    gambling_odds = imp_mean.fit_transform(gambling_odds)
-    odds_cols = ["whh", "wha", "whd"]
-    matches_df[odds_cols] = gambling_odds
+        cur.executemany(f"UPDATE Match SET home_team_elo = ? WHERE home_team_api_id = ?", team_elo_and_id)
+        cur.executemany(f"UPDATE Match SET away_team_elo = ? WHERE away_team_api_id = ?", team_elo_and_id)
 
-    scaler = MinMaxScaler()
-    columns_to_norm = ['home_elo', 'away_elo', 'whh', 'wha', 'whd']
-    x = matches_df[columns_to_norm].values
-    scaler.fit(x)
-    joblib.dump(scaler, r"D:\intro2ai\ai-group-project-team-football\scaler.pkl")
-    x_scaled = scaler.transform(x)
-    df_temp = pd.DataFrame(x_scaled, columns=columns_to_norm, index=matches_df.index)
-    matches_df[columns_to_norm] = df_temp
+        pbar.set_description("Generating DataFrame")
 
-    matches_df["winner"] = matches_df["winner"].astype("str")
-    matches_df["home_team"] = matches_df["home_team"].astype("str") + "_home"
-    matches_df["away_team"] = matches_df["away_team"].astype("str") + "_away"
+        cur.execute("SELECT winner,home_team_api_id,away_team_api_id,home_team_elo,away_team_elo FROM Match")
+        match_data = cur.fetchall()
+        matches_df = pd.DataFrame(match_data, columns=["winner", "home_team", "away_team", "home_elo", "away_elo"])
 
-    labels = matches_df.filter(items=["winner"])
-    lb = LabelBinarizer()
-    lb.fit(labels["winner"])
-    lb_trans = lb.transform(labels["winner"])
-    labels = pd.DataFrame(lb_trans, columns=lb.classes_)
-    label_list = labels.columns
+        '''
+        cur.execute("SELECT WHH,WHA,WHD FROM Match")
+        gambling_odds = cur.fetchall()
+        imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean')
+        gambling_odds = imp_mean.fit_transform(gambling_odds)
+        odds_cols = ["whh", "wha", "whd"]
+        matches_df[odds_cols] = gambling_odds
+        '''
 
-    ohe_home = LabelBinarizer()
-    ohe_away = LabelBinarizer()
+        pbar.update(1)
+        pbar.set_description("Normalising Numerical Data")
 
-    features = matches_df
+        scaler = MinMaxScaler()
+        columns_to_norm = ['home_elo', 'away_elo']
+        x = matches_df[columns_to_norm].values
+        scaler.fit(x)
+        x_scaled = scaler.transform(x)
+        df_temp = pd.DataFrame(x_scaled, columns=columns_to_norm, index=matches_df.index)
+        matches_df[columns_to_norm] = df_temp
 
-    ohe_home.fit(features["home_team"])
-    ohe_away.fit(features["away_team"])
+        pbar.update(1)
+        pbar.set_description("OneHotEncoding Categorical Data")
 
-    ohe_home_trans = ohe_home.transform(features["home_team"])
-    ohe_away_trans = ohe_away.transform(features["away_team"])
+        matches_df["winner"] = matches_df["winner"].astype("str")
+        matches_df["home_team"] = matches_df["home_team"].astype("str") + "_home"
+        matches_df["away_team"] = matches_df["away_team"].astype("str") + "_away"
 
-    features = matches_df.drop(columns=["winner", "home_team", "away_team"])
+        labels = matches_df.filter(items=["winner"])
+        lb = LabelBinarizer()
+        lb.fit(labels["winner"])
+        lb_trans = lb.transform(labels["winner"])
+        labels = pd.DataFrame(lb_trans, columns=lb.classes_)
+        label_list = labels.columns
 
-    ohe_home_df = pd.DataFrame(ohe_home_trans, columns=ohe_home.classes_)
-    ohe_away_df = pd.DataFrame(ohe_away_trans, columns=ohe_away.classes_)
+        ohe_home = LabelBinarizer()
+        ohe_away = LabelBinarizer()
 
-    features = features.join(ohe_home_df, how="right")
-    features = features.join(ohe_away_df, how="right")
-    feature_list = features.columns
+        features = matches_df
 
-    labels = np.array(labels).astype('float32')
-    features = np.array(features).astype('float32')
+        ohe_home.fit(features["home_team"])
+        ohe_away.fit(features["away_team"])
 
-    train_features, test_features, train_labels, test_labels = train_test_split(features, labels, test_size=0.25,
-                                                                                random_state=42)
+        ohe_home_trans = ohe_home.transform(features["home_team"])
+        ohe_away_trans = ohe_away.transform(features["away_team"])
+
+        features = matches_df.drop(columns=["winner", "home_team", "away_team"])
+
+        ohe_home_df = pd.DataFrame(ohe_home_trans, columns=ohe_home.classes_)
+        ohe_away_df = pd.DataFrame(ohe_away_trans, columns=ohe_away.classes_)
+
+        features = features.join(ohe_home_df, how="right")
+        features = features.join(ohe_away_df, how="right")
+        feature_list = features.columns
+
+        labels = np.array(labels).astype('float32')
+        features = np.array(features).astype('float32')
+
+        pbar.update(1)
+        pbar.set_description("Splitting Data into Train and Test")
+
+        train_features, test_features, train_labels, test_labels = train_test_split(features, labels, test_size=0.25,random_state=42)
+
+        pbar.set_description("Data Preprocessing Complete")
+        pbar.update(1)
 
     threads = cpu_count() - 1
-    rf = RandomForestClassifier(n_estimators=150,verbose=1, n_jobs=threads)
-
+    rf = RandomForestClassifier(n_estimators=700,verbose=1, n_jobs=-1)
 
     rf.fit(train_features, train_labels)
 
-
     #joblib.dump(ml, r"D:\intro2ai\ai-group-project-team-football\ml.pkl")
 
+    rf_preds = predict(rf, test_features,lb)
 
-    rf_preds = predict(rf, test_features)
+
     test_labels = lb.inverse_transform(test_labels)
 
-    base_acc = baseline_accuracy(test_labels, test_features, feature_list, ohe_home, lb)*100
+    base_acc = baseline_accuracy(test_labels, test_features, feature_list, ohe_home)
+
     acc = metrics.accuracy_score(test_labels, rf_preds)*100
 
     print('Baseline Accuracy: %.3f' % base_acc)
+
     print('RF Accuracy: %.3f' % acc)
     diff = (acc - base_acc)
     print('Model better than baseline by: %.3f pp' % diff)
