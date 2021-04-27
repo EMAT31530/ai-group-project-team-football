@@ -11,7 +11,14 @@ import joblib
 from multiprocessing import cpu_count
 from sklearn.preprocessing import MinMaxScaler,LabelBinarizer
 from sklearn.impute import SimpleImputer
+from sqlAttackDefense import setTeamAttackDefence
 
+
+def setAttackDefence(cur,set=False):
+    if set:
+        setTeamAttackDefence(cur)
+    else:
+        pass
 
 def baseline_accuracy(test_labels,test_features,feature_list,ohe_home):
     test_features_df = pd.DataFrame(test_features, columns=feature_list)
@@ -70,7 +77,7 @@ def main():
     cur = con.cursor()
 
     cur.execute(
-        "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match")
+        "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match WHERE league_id = '1729'")
     matches = cur.fetchall()
     trainMatches, testMatches = train_test_split(matches, test_size=0.25)
 
@@ -78,22 +85,41 @@ def main():
 
     optimiseElo(cur, trainMatches, testMatches, useSavedRes=True, useSavedResPath=resPath)
 
-    with tqdm(desc = "Data Preprocessing Begin",total=4) as pbar:
+    cur.execute("SELECT home_team_api_id from Match WHERE league_id = '1729'")
+    team_ids = cur.fetchall()
+    team_ids = str(tuple(set([team_id[0] for team_id in team_ids])))
+
+    with tqdm(desc = "Data Preprocessing Begin",total=5) as pbar:
 
         pbar.set_description("Setting Home and Away ELOs")
 
-        cur.execute("SELECT elo,team_api_id FROM TEAM")
+        cur.execute(f"SELECT elo,team_api_id FROM Team WHERE team_api_id IN {team_ids}")
         team_elo_and_id = cur.fetchall()
 
         cur.executemany(f"UPDATE Match SET home_team_elo = ? WHERE home_team_api_id = ?", team_elo_and_id)
         cur.executemany(f"UPDATE Match SET away_team_elo = ? WHERE away_team_api_id = ?", team_elo_and_id)
 
+        pbar.set_description("Setting Home and Away Atk. and Def. Ratings")
+
+        setAttackDefence(cur, set=False)
+
+        cur.execute(f"SELECT attack,defence,team_api_id FROM Team WHERE team_api_id IN {team_ids}")
+        team_attack_defense_id = cur.fetchall()
+
+        cur.executemany(f"UPDATE MATCH SET home_attack = ?,home_defence = ? WHERE home_team_api_id = ?",
+                        team_attack_defense_id)
+        cur.executemany(f"UPDATE MATCH SET away_attack = ?,away_defence = ? WHERE away_team_api_id = ?",
+                        team_attack_defense_id)
+
         pbar.set_description("Generating DataFrame")
 
-        cur.execute("SELECT winner,home_team_api_id,away_team_api_id,home_team_elo,away_team_elo FROM Match")
+        cur.execute(
+            "SELECT winner,home_team_api_id,away_team_api_id,home_team_elo,away_team_elo,home_attack,home_defence,"
+            "away_attack,away_defence FROM Match WHERE league_id = '1729'")
         match_data = cur.fetchall()
-        matches_df = pd.DataFrame(match_data, columns=["winner", "home_team", "away_team", "home_elo", "away_elo"])
-
+        matches_df = pd.DataFrame(match_data, columns=["winner", "home_team", "away_team", "home_elo", "away_elo",
+                                                       "home_attack", "home_defence", "away_attack", "away_defence"])
+        
         '''
         cur.execute("SELECT WHH,WHA,WHD FROM Match")
         gambling_odds = cur.fetchall()
@@ -107,7 +133,7 @@ def main():
         pbar.set_description("Normalising Numerical Data")
 
         scaler = MinMaxScaler()
-        columns_to_norm = ['home_elo', 'away_elo']
+        columns_to_norm = ['home_elo', 'away_elo','home_attack','home_defence','away_attack','away_defence'] # + odds_cols
         x = matches_df[columns_to_norm].values
         scaler.fit(x)
         x_scaled = scaler.transform(x)

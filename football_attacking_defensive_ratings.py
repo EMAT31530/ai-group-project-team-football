@@ -99,9 +99,8 @@ def regression(dict_stat):
     plt.ylabel('stat')
     plt.legend(loc='best')
     plt.show()
-
-
     return float(new_y_hat[0])
+
 
 def attacking_ratings(average_crosses, average_shots, std_crosses, std_shots, cross_prediction, shot_prediction):
 
@@ -143,7 +142,7 @@ dict_all_crosses = convert_crosses(all_crosses)
 average_crosses, std_crosses = average(dict_all_crosses)
 
 dict_all_fouls = convert_fouls(all_fouls)
-average_fouls, std_fouls =average(dict_all_fouls)
+average_fouls, std_fouls = average(dict_all_fouls)
 
 dict_all_shots = convert_shots(all_shots)
 average_shots, std_shots = average(dict_all_shots)
