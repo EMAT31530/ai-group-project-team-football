@@ -3,7 +3,7 @@ import pandas as pd
 import joblib
 import sqlite3
 from sklearn.model_selection import train_test_split
-from randomforest import optimiseElo
+from randomforest import optimiseElo,setAttackDefence
 from sklearn.preprocessing import MinMaxScaler, LabelBinarizer
 from sklearn.impute import SimpleImputer
 from tensorflow.keras import Sequential
@@ -13,6 +13,8 @@ from tensorflow.keras.callbacks import EarlyStopping
 from sklearn import metrics
 from multiprocessing import cpu_count
 from tensorflow.keras.optimizers import Adam
+
+
 
 
 
@@ -33,7 +35,7 @@ def main():
     cur = con.cursor()
 
     cur.execute(
-        "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match")
+        "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match WHERE league_id = '1729'")
     matches = cur.fetchall()
     trainMatches, testMatches = train_test_split(matches, test_size=0.25)
 
@@ -41,26 +43,42 @@ def main():
 
     optimiseElo(cur, trainMatches, testMatches, useSavedRes=True, useSavedResPath=resPath)
 
+    cur.execute("SELECT home_team_api_id from Match WHERE league_id = '1729'")
+    team_ids = cur.fetchall()
+    team_ids = str(tuple(set([team_id[0] for team_id in team_ids])))
 
-    cur.execute("SELECT elo,team_api_id FROM TEAM")
+    cur.execute(f"SELECT elo,team_api_id FROM Team WHERE team_api_id IN {team_ids}")
     team_elo_and_id = cur.fetchall()
 
     cur.executemany(f"UPDATE Match SET home_team_elo = ? WHERE home_team_api_id = ?", team_elo_and_id)
     cur.executemany(f"UPDATE Match SET away_team_elo = ? WHERE away_team_api_id = ?", team_elo_and_id)
 
-    cur.execute("SELECT winner,home_team_api_id,away_team_api_id,home_team_elo,away_team_elo FROM Match")
-    match_data = cur.fetchall()
-    matches_df = pd.DataFrame(match_data, columns=["winner", "home_team", "away_team", "home_elo", "away_elo"])
+    setAttackDefence(cur,set=False)
 
-    cur.execute("SELECT WHH,WHA,WHD,B365H,B365A,B365D,LBH,LBA,LBD FROM Match")
+    cur.execute(f"SELECT attack,defence,team_api_id FROM Team WHERE team_api_id IN {team_ids}")
+    team_attack_defense_id = cur.fetchall()
+
+    cur.executemany(f"UPDATE MATCH SET home_attack = ?,home_defence = ? WHERE home_team_api_id = ?",team_attack_defense_id)
+    cur.executemany(f"UPDATE MATCH SET away_attack = ?,away_defence = ? WHERE away_team_api_id = ?",team_attack_defense_id)
+
+    cur.execute("SELECT winner,home_team_api_id,away_team_api_id,home_team_elo,away_team_elo,home_attack,home_defence,"
+                "away_attack,away_defence FROM Match WHERE league_id = '1729'")
+    match_data = cur.fetchall()
+    matches_df = pd.DataFrame(match_data, columns=["winner", "home_team", "away_team", "home_elo", "away_elo",
+                                                   "home_attack","home_defence","away_attack","away_defence"])
+
+    '''
+    cur.execute("SELECT WHH,WHA,WHD,B365H,B365A,B365D,LBH,LBA,LBD FROM Match WHERE league_id = '1729'")
     gambling_odds = cur.fetchall()
     imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean')
     gambling_odds = imp_mean.fit_transform(gambling_odds)
     odds_cols = ["whh", "wha", "whd", "b365h", "b365a", "b365d", "lbh", "lba", "lbd"]
     matches_df[odds_cols] = gambling_odds
+    '''
 
     scaler = MinMaxScaler()
-    columns_to_norm = ['home_elo', 'away_elo', 'whh', 'wha', 'whd', "b365h", "b365a", "b365d", "lbh", "lba", "lbd"]
+    columns_to_norm = ['home_elo', 'away_elo','home_attack','home_defence','away_attack','away_defence'] #+ odds_cols
+    print(columns_to_norm)
     x = matches_df[columns_to_norm].values
     scaler.fit(x)
     joblib.dump(scaler, r"D:\intro2ai\ai-group-project-team-football\scaler.pkl")
@@ -78,6 +96,7 @@ def main():
     lb_trans = lb.transform(labels["winner"])
     labels = pd.DataFrame(lb_trans, columns=lb.classes_)
     label_list = labels.columns
+    numLabels = len(label_list)
 
     ohe_home = LabelBinarizer()
     ohe_away = LabelBinarizer()
@@ -99,6 +118,7 @@ def main():
     features = features.join(ohe_away_df, how="right")
     feature_list = features.columns
 
+
     labels = np.array(labels).astype('float32')
     features = np.array(features).astype('float32')
 
@@ -116,7 +136,7 @@ def main():
     model.add(Dropout(0.34))
     model.add(Dense(760, activation='relu', kernel_initializer='he_normal'))
     model.add(Dropout(0.42))
-    model.add(Dense(300, activation='softmax'))
+    model.add(Dense(numLabels, activation='softmax'))
 
     model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
 
