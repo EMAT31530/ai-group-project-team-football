@@ -61,15 +61,9 @@ def optimiseElo(cur, trainMatches, testMatches, maxiter=1000,save = False,savePa
     if save:
         joblib.dump(res,savePath)
     res = res["x"]
-    k = res[0]
-    mult2 = res[2]
-    mult3 = res[3]
-    mult4 = res[4]
-    cur.execute(
-        "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match")
-    allMatches = cur.fetchall()
-    allMatches.sort(key=lambda x: x[1])
-    train(k, allMatches, 1, cur, mult2, mult3, mult4, dotqdm=True)
+
+    return res
+
 
 
 def main():
@@ -79,17 +73,36 @@ def main():
     cur.execute(
         "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match WHERE league_id = '1729'")
     matches = cur.fetchall()
-    trainMatches, testMatches = train_test_split(matches, test_size=0.25)
+    trainMatches, testMatches = train_test_split(matches, test_size=0.2)
+    trainMatches, valMatches = train_test_split(trainMatches, test_size=0.2)
 
     resPath = r"D:\intro2ai\ai-group-project-team-football\res.pkl"
 
-    optimiseElo(cur, trainMatches, testMatches, useSavedRes=True, useSavedResPath=resPath)
+
+    res = optimiseElo(cur, trainMatches, valMatches, useSavedRes= True, useSavedResPath=resPath)
+
+
+    k = res[0]
+    d = res[1]
+    mult2 = res[2]
+    mult3 = res[3]
+    mult4 = res[4]
+
+    train(k, testMatches, 1, cur, mult2, mult3, mult4)
+    acc = test(testMatches, d, cur)
+    print('____')
+    print(acc)
+    print('____')
+
+    train(k, matches, 1, cur, mult2, mult3, mult4, dotqdm=True)
+
+
 
     cur.execute("SELECT home_team_api_id from Match WHERE league_id = '1729'")
     team_ids = cur.fetchall()
     team_ids = str(tuple(set([team_id[0] for team_id in team_ids])))
 
-    with tqdm(desc = "Data Preprocessing Begin",total=5) as pbar:
+    with tqdm(desc = "Data Preprocessing Begin",total=6) as pbar:
 
         pbar.set_description("Setting Home and Away ELOs")
 
@@ -99,6 +112,7 @@ def main():
         cur.executemany(f"UPDATE Match SET home_team_elo = ? WHERE home_team_api_id = ?", team_elo_and_id)
         cur.executemany(f"UPDATE Match SET away_team_elo = ? WHERE away_team_api_id = ?", team_elo_and_id)
 
+        pbar.update(1)
         pbar.set_description("Setting Home and Away Atk. and Def. Ratings")
 
         setAttackDefence(cur, set=False)
@@ -111,6 +125,7 @@ def main():
         cur.executemany(f"UPDATE MATCH SET away_attack = ?,away_defence = ? WHERE away_team_api_id = ?",
                         team_attack_defense_id)
 
+        pbar.update(1)
         pbar.set_description("Generating DataFrame")
 
         cur.execute(
@@ -119,13 +134,13 @@ def main():
         match_data = cur.fetchall()
         matches_df = pd.DataFrame(match_data, columns=["winner", "home_team", "away_team", "home_elo", "away_elo",
                                                        "home_attack", "home_defence", "away_attack", "away_defence"])
-        
+
         '''
-        cur.execute("SELECT WHH,WHA,WHD FROM Match")
+        cur.execute("SELECT WHH,WHA,WHD,B365H,B365A,B365D,LBH,LBA,LBD FROM Match WHERE league_id = '1729'")
         gambling_odds = cur.fetchall()
         imp_mean = SimpleImputer(missing_values=np.nan, strategy='mean')
         gambling_odds = imp_mean.fit_transform(gambling_odds)
-        odds_cols = ["whh", "wha", "whd"]
+        odds_cols = ["whh", "wha", "whd", "b365h", "b365a", "b365d", "lbh", "lba", "lbd"]
         matches_df[odds_cols] = gambling_odds
         '''
 
@@ -133,7 +148,7 @@ def main():
         pbar.set_description("Normalising Numerical Data")
 
         scaler = MinMaxScaler()
-        columns_to_norm = ['home_elo', 'away_elo','home_attack','home_defence','away_attack','away_defence'] # + odds_cols
+        columns_to_norm = ['home_elo', 'away_elo','home_attack','home_defence','away_attack','away_defence'] #+ odds_cols
         x = matches_df[columns_to_norm].values
         scaler.fit(x)
         x_scaled = scaler.transform(x)
@@ -185,15 +200,14 @@ def main():
         pbar.set_description("Data Preprocessing Complete")
         pbar.update(1)
 
-    threads = cpu_count() - 1
-    rf = RandomForestClassifier(n_estimators=700,verbose=1, n_jobs=-1)
+
+    rf = RandomForestClassifier(n_estimators=1000,verbose=1, n_jobs=-1)
 
     rf.fit(train_features, train_labels)
 
     #joblib.dump(ml, r"D:\intro2ai\ai-group-project-team-football\ml.pkl")
 
     rf_preds = predict(rf, test_features,lb)
-
 
     test_labels = lb.inverse_transform(test_labels)
 

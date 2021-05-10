@@ -78,7 +78,7 @@ def main():
 
     scaler = MinMaxScaler()
     columns_to_norm = ['home_elo', 'away_elo','home_attack','home_defence','away_attack','away_defence'] #+ odds_cols
-    print(columns_to_norm)
+
     x = matches_df[columns_to_norm].values
     scaler.fit(x)
     joblib.dump(scaler, r"D:\intro2ai\ai-group-project-team-football\scaler.pkl")

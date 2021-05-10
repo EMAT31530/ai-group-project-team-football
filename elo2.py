@@ -63,8 +63,8 @@ def train(k, traindata, z,cur,mult2,mult3,mult4,dotqdm = False): #data = [match_
             cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[1],))
             awayTeamElo = cur.fetchall()[0][0]
 
-            newElos = eloUpdate(homeTeamElo, awayTeamElo, s1, s2, k, match[2], match[3], mult2, mult3,
-                                mult4)
+            newElos = eloUpdate(homeTeamElo, awayTeamElo, s1, s2, k, match[2], match[3], mult2, mult3,mult4)
+
             cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[0], match[0],))
             cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[1], match[1],))
             i += 1
