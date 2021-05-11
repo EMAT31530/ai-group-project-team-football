@@ -3,30 +3,40 @@ import pandas as pd
 import joblib
 import sqlite3
 from sklearn.model_selection import train_test_split
-from randomforest import optimiseElo
-from sklearn.preprocessing import MinMaxScaler,LabelBinarizer
+from randomforest import optimiseElo,setAttackDefence
+from sklearn.preprocessing import MinMaxScaler, LabelBinarizer
 from sklearn.impute import SimpleImputer
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Dense,Dropout
-from tensorflow.keras.models import save_model,load_model
+from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, AlphaDropout, LayerNormalization
+from tensorflow.keras.models import save_model, load_model
 from tensorflow.keras.callbacks import EarlyStopping
 from sklearn import metrics
 from multiprocessing import cpu_count
 from tensorflow.keras.optimizers import Adam
-import kerastuner as kt
-from randomforest import setAttackDefence
-from elo2 import train
+from elo2 import train,test
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+import talos as ta
+from talos.utils import hidden_layers
+from talos.utils.best_model import best_model
+from talos import Predict, Analyze
 
 
-def baseline_accuracy(test_labels,test_features,feature_list,ohe_home,lb):
+
+
+
+
+
+
+def baseline_accuracy(test_labels, test_features, feature_list, ohe_home, lb):
     test_features_df = pd.DataFrame(test_features, columns=feature_list)
-    home = test_features_df.filter(regex = "(.*)_home")
+    home = test_features_df.filter(regex="(.*)_home")
 
     true = lb.inverse_transform(test_labels)
     base_preds = ohe_home.inverse_transform(home.values)
-    base_preds = [pred.replace("_home","") for pred in base_preds]
+    base_preds = [pred.replace("_home", "") for pred in base_preds]
 
-    baseline_accuracy = metrics.accuracy_score(true,base_preds)*100
+    baseline_accuracy = metrics.accuracy_score(true, base_preds) * 100
     return baseline_accuracy
 
 
@@ -39,17 +49,17 @@ def main():
     matches = cur.fetchall()
     trainMatches, testMatches = train_test_split(matches, test_size=0.25)
 
-
     #resPath = r"D:\intro2ai\ai-group-project-team-football\res.pkl"
+
     #optimiseElo(cur, trainMatches, testMatches, useSavedRes=True, useSavedResPath=resPath)
 
     k = 4.849879326548514
+    d = 125.81976547554737
     mult2 = 2.1342190777850742
     mult3 = 3.4769118949428233
     mult4 = 1.143940853285419
 
     train(k, matches, 1, cur, mult2, mult3, mult4, dotqdm=True)
-
 
     cur.execute("SELECT home_team_api_id from Match WHERE league_id = '1729'")
     team_ids = cur.fetchall()
@@ -69,11 +79,26 @@ def main():
     cur.executemany(f"UPDATE MATCH SET home_attack = ?,home_defence = ? WHERE home_team_api_id = ?",team_attack_defense_id)
     cur.executemany(f"UPDATE MATCH SET away_attack = ?,away_defence = ? WHERE away_team_api_id = ?",team_attack_defense_id)
 
+
     cur.execute("SELECT winner,home_team_api_id,away_team_api_id,home_team_elo,away_team_elo,home_attack,home_defence,"
                 "away_attack,away_defence FROM Match WHERE league_id = '1729'")
     match_data = cur.fetchall()
     matches_df = pd.DataFrame(match_data, columns=["winner", "home_team", "away_team", "home_elo", "away_elo",
                                                    "home_attack","home_defence","away_attack","away_defence"])
+
+    cur.execute(
+        "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match WHERE league_id = '1729'")
+    matches = cur.fetchall()
+    trainMatches, testMatches = train_test_split(matches, test_size=0.2)
+
+    k = 4.849879326548514
+    d = 125.81976547554737
+    mult2 = 2.1342190777850742
+    mult3 = 3.4769118949428233
+    mult4 = 1.143940853285419
+
+    train(k, trainMatches, 1, cur, mult2, mult3, mult4, dotqdm=False)
+    eloAcc = test(testMatches,d,cur)
 
     '''
     cur.execute("SELECT WHH,WHA,WHD,B365H,B365A,B365D,LBH,LBA,LBD FROM Match WHERE league_id = '1729'")
@@ -86,6 +111,7 @@ def main():
 
     scaler = MinMaxScaler()
     columns_to_norm = ['home_elo', 'away_elo','home_attack','home_defence','away_attack','away_defence'] #+ odds_cols
+
 
     x = matches_df[columns_to_norm].values
     scaler.fit(x)
@@ -132,95 +158,59 @@ def main():
 
     train_features, test_features, train_labels, test_labels = train_test_split(features, labels, test_size=0.2)
 
-    train_features, val_features, train_labels, val_labels = train_test_split(train_features, train_labels,
-                                                                              test_size=0.2)
+    train_features, val_features, train_labels, val_labels = train_test_split(train_features, train_labels,test_size=0.2)
 
     n_features = train_features.shape[1]
 
-    def model_builder(hp):
+    p = {'shapes': ['brick', 'triangle', 'funnel'],
+         'activation': ['relu'],
+         'first_neuron': (50,3000,50),
+         'last_neuron' : (50,3000,50),
+         'hidden_layers': (0,10,10),
+         'dropout': (0.01,0.99,100),
+         'batch_size': (300,20000,100),
+         'epochs': [500]}
+
+
+    def football_model(x_train,y_train,x_val,y_val,params):
         model = Sequential()
 
+        es_callback = EarlyStopping(monitor='val_loss', patience=3)
 
+        model.add(Dense(params['first_neuron'], activation='relu', kernel_initializer='he_normal', input_shape=(n_features,)))
+        model.add(Dropout(params['dropout']))
 
-        hp_dense1 = hp.Int('dense1', min_value=10, max_value=100000, step=10)
-        hp_dense2 = hp.Int('dense2', min_value=10, max_value=100000, step=10)
-        hp_dense3 = hp.Int('dense3', min_value=10, max_value=100000, step=10)
-
-        hp_dropout1 = hp.Float('dropout1', min_value=0.01, max_value=0.99, step=0.01)
-        hp_dropout2 = hp.Float('dropout2', min_value=0.01, max_value=0.99, step=0.01)
-        hp_dropout3 = hp.Float('dropout3', min_value=0.01, max_value=0.99, step=0.01)
-
-        hp_learning_rate = hp.Choice('learning_rate', values=[1e-1,1e-2, 1e-3, 1e-4,1e-5,1e-6])
-
-        model.add(Dense(units=hp_dense1, activation='elu', kernel_initializer='he_normal', input_shape=(n_features,)))
-        model.add(Dropout(hp_dropout1))
-        model.add(Dense(units=hp_dense2, activation='elu', kernel_initializer='he_normal'))
-        model.add(Dropout(hp_dropout2))
-        model.add(Dense(units=hp_dense2, activation='elu', kernel_initializer='he_normal'))
-        model.add(Dropout(hp_dropout3))
-        model.add(Dense(units=hp_dense3, activation='elu', kernel_initializer='he_normal'))
-        model.add(Dropout(hp_dropout3))
+        hidden_layers(model,params,params['last_neuron'])
 
         model.add(Dense(numLabels, activation='softmax'))
 
-        model.compile(optimizer=Adam(learning_rate=hp_learning_rate), loss='categorical_crossentropy', metrics=['accuracy'])
+        model.compile(optimizer=Adam(learning_rate=0.0001), loss='categorical_crossentropy', metrics=['accuracy'])
 
-        return model
+        threads = cpu_count()
+        history = model.fit(x_train,y_train, epochs=params['epochs'], batch_size=params['batch_size'], verbose=0, callbacks=[es_callback],
+              validation_data=(x_val,y_val), workers=threads, use_multiprocessing=True)
 
-    tuner = kt.Hyperband(model_builder,
-                         objective='val_accuracy',
-                         max_epochs=500,
-                         factor=2,
-                         hyperband_iterations = 1000
-                         )
+        return history,model
+
+    t = ta.Scan(x= train_features,y = train_labels,x_val = val_features,y_val = val_labels,
+                          model = football_model,params = p,experiment_name = 'football',round_limit=1000)
+
+    p = Predict(t)
 
 
-    es_callback = EarlyStopping(monitor='val_loss', patience=3)
-    threads = cpu_count()
 
-    batchSize = 10000
+    preds = p.predict(test_features,metric='val_accuracy',asc = False).argmax(axis=1)
 
-    tuner.search(train_features, train_labels, epochs=300, batch_size=batchSize, verbose=1, callbacks=[es_callback],
-              validation_data=(val_features, val_labels), workers=threads)
+    acc = metrics.accuracy_score(test_labels.argmax(axis=1), preds) * 100
 
-    best_hps = tuner.get_best_hyperparameters(num_trials=100)[0]
+    base_acc = baseline_accuracy(test_labels, test_features, feature_list, ohe_home, lb)
 
-    model = tuner.hypermodel.build(best_hps)
-    history = model.fit(train_features, train_labels, epochs=300, batch_size=batchSize, verbose=1, callbacks=[es_callback],
-              validation_data=(val_features, val_labels), workers=threads,use_multiprocessing=True)
 
-    val_acc_per_epoch = history.history['val_accuracy']
-    best_epoch = val_acc_per_epoch.index(max(val_acc_per_epoch)) + 1
-
-    model.fit(train_features, train_labels, epochs=best_epoch, batch_size=batchSize, verbose=1, callbacks=[es_callback],
-              validation_data=(val_features, val_labels), workers=threads,use_multiprocessing=True)
-
-    loss, acc = model.evaluate(test_features, test_labels, verbose=1)
-    acc*=100
-
-    print(f"""
-        dense1 = {best_hps.get('dense1')}\n
-        dense2 = {best_hps.get('dense2')}\n
-        dense3 = {best_hps.get('dense3')}\n
-
-        drop1 = {best_hps.get('dropout1')}\n
-        drop2 = {best_hps.get('dropout2')}\n
-        drop3 = {best_hps.get('dropout3')}\n
- 
-        
-        
-        learning_rate = {best_hps.get('learning_rate')}
-        """)
-
-    print('Best epoch: %d' % (best_epoch,))
-
+    print('Baseline Accuracy: %.3f' % base_acc)
     print('Test Accuracy: %.3f' % acc)
+    diff = (acc - base_acc)
+    print('Model better than baseline by: %.3f pp' % diff)
 
 
 if __name__ == '__main__':
     main()
-
-
-
-
-

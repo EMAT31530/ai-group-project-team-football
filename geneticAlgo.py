@@ -7,6 +7,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
+
 def getProgenitors(num):      #  [k,d,2mult,3mult,4mult]
     ranges = np.asarray([[1, 300], [0,400],[1,3],[1,4],[1,5]])
     starts = ranges[:, 0]
@@ -215,9 +216,13 @@ testAcc = test(testMatches,d,cur)
 
 print(f"Test. Acc for best params. = {testAcc}")
 
-plt.plot(bestAccs,label = 'Best')
-plt.plot(aveAccs,label = 'Ave')
+plt.plot([100*acc for acc in bestAccs],label = 'Best Generational Accuracy')
+plt.plot([100*acc for acc in aveAccs],label = 'Average Generational Accuracy')
 plt.legend()
+plt.grid()
+plt.xlabel('Generation')
+plt.xticks(range(0,len(bestAccs),2))
+plt.ylabel('Percentage Accuracy')
 plt.show()
 
 

@@ -6,7 +6,7 @@ import joblib
 import numpy as np
 from sklearn.impute import SimpleImputer
 
-
+print([i for i in range(300,1000,100)])
 con = sqlite3.connect(r'C:\Users\Luca\PycharmProjects\IntroToAI-Group5-TeamB(football)\database.sqlite')
 cur = con.cursor()
 

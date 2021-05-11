@@ -5,7 +5,8 @@ import pandas as pd
 import random
 from tqdm import tqdm
 from sklearn import metrics
-
+from sklearn.model_selection import train_test_split
+from scipy.optimize import dual_annealing
 
 
 def eloUpdate(r1, r2, s1, s2, k,goal1,goal2,mult2,mult3,mult4):  # r1 = team 1 elo, r2 = team 2 elo, s1/2 = 1,0,0.5 depending win/lose/draw
@@ -137,77 +138,57 @@ def main():
     cur = con.cursor()
 
     cur.execute("UPDATE Team SET elo=1000")
-    '''cur.execute(
-        "SELECT date,home_team_api_id,away_team_api_id,home_team_goal,away_team_goal FROM Match WHERE id <25000")
-    trainMatches = cur.fetchall()
-    trainMatches.sort(key=lambda x: x[0])'''
-    '''cur.execute(
-        "SELECT date,home_team_api_id,away_team_api_id,home_team_goal,away_team_goal FROM Match WHERE season != '2015/2016'")
-    trainMatches = cur.fetchall()
-    trainMatches.sort(key=lambda x: x[0])'''
 
 
-    '''cur.execute(
-        "SELECT date,home_team_api_id,away_team_api_id,home_team_goal,away_team_goal FROM Match WHERE id > 25000")
-    testMatches = cur.fetchall()'''
-    cur.execute(
-        "SELECT date,home_team_api_id,away_team_api_id,home_team_goal,away_team_goal FROM Match WHERE season = '2015/2016'")
-    Matches = cur.fetchall()
-    Matches.sort(key=lambda x: x[0])
-    trainMatches = Matches[0:2800]
-    testMatches = Matches[-526:]
-
-    train(50, trainMatches, 1)
-
-    cur.execute("SELECT elo FROM Team")
-    teamElos = cur.fetchall()
-    # print(teamElos)
-
-    cur.execute("SELECT MAX(elo) FROM Team")
-    maxElo = cur.fetchall()
-
-    cur.execute("SELECT team_long_name FROM Team WHERE elo = ?", (maxElo[0][0],))
-    maxEloTeam = cur.fetchall()
-
-    acc = test(testMatches,25)
-
-    bestacc = 0
-    bestk = 0
-    bestd = 0
     karr = []
     darr = []
     accarr  = []
-    for i in range(1,5):
 
-        train(i,trainMatches,1)
-        for j in range(1,5):
-            karr.append(i)
-            darr.append(j)
-            acc = test(testMatches,j)
+    cur.execute(
+        "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match WHERE league_id = '1729'")
+    matches = cur.fetchall()
+    trainMatches, testMatches = train_test_split(matches, test_size=0.2)
+
+
+
+    ks = np.linspace(1,500,200)
+    ds = np.linspace(0,500,200)
+    bestAcc = 0
+
+    for k in tqdm(ks):
+
+        train(k,trainMatches,1,cur,1,1,1,dotqdm=False)
+        for d in ds:
+            karr.append(k)
+            darr.append(d)
+            acc = test(testMatches,d,cur)
+            if acc > bestAcc:
+                bestAcc = acc
+                bestK = k
+                bestD = d
             accarr.append(acc)
-            print(acc)
-            if acc > bestacc:
-                bestacc = acc
-                bestk = i
-                bestd = j
+
+    print(bestAcc)
+    print(bestK)
+    print(bestD)
+
 
     x = np.array(karr)
     y = np.array(darr)
-
     z = np.array(accarr)
-
 
     cols = np.unique(x).shape[0]
     X = x.reshape(-1,cols)
     Y = y.reshape(-1,cols)
     Z = z.reshape(-1,cols)
-    print(Z)
+
     plt.contourf(X,Y,Z)
     clb = plt.colorbar(plt.contourf(X,Y,Z))
     clb.set_label('Percentage Accuracy')
     plt.xlabel('K')
     plt.ylabel('D')
     plt.show()
+
 
 if __name__ == "__main__":
     main()
