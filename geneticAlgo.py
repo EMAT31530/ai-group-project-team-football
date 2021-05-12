@@ -197,13 +197,14 @@ cur.execute(
         "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match WHERE league_id = '1729'")
 matches = cur.fetchall()
 
-trainMatches, testMatches = train_test_split(matches, test_size=0.2)
-trainMatches, valMatches = train_test_split(trainMatches, test_size=0.2)
+trainMatches, testMatches = train_test_split(matches, test_size=0.4)
+trainMatches, trainValMatches = train_test_split(trainMatches, test_size = 0.333)
+testMatches, testValMatches = train_test_split(testMatches,test_size=0.5)
 
 
 progens = getProgenitors(800)
 
-bestAccs,aveAccs, valArr = algoIters(progens,100,trainMatches,valMatches,cur,10)
+bestAccs,aveAccs, valArr = algoIters(progens,100,trainMatches,trainValMatches,cur,10)
 
 k = valArr[0]
 d = valArr[1]
@@ -212,7 +213,7 @@ mult3 = valArr[3]
 mult4 = valArr[4]
 
 train(k,testMatches,1,cur,mult2,mult3,mult4)
-testAcc = test(testMatches,d,cur)
+testAcc = test(testValMatches,d,cur)
 
 print(f"Test. Acc for best params. = {testAcc}")
 

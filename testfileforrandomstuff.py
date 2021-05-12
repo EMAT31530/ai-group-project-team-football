@@ -5,8 +5,19 @@ from elo2 import test
 import joblib
 import numpy as np
 from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
 
-print([i for i in range(300,1000,100)])
+a = [i for i in range(1,101)]
+a = np.array(a)
+print(a)
+sixty,forty = train_test_split(a,test_size=0.4)
+twenty1, twenty2 = train_test_split(forty,test_size=0.5)
+forty1, twenty3 = train_test_split(sixty,test_size=0.333)
+
+print(len(twenty1),len(twenty2),len(forty1),len(twenty3))
+
+
+
 con = sqlite3.connect(r'C:\Users\Luca\PycharmProjects\IntroToAI-Group5-TeamB(football)\database.sqlite')
 cur = con.cursor()
 

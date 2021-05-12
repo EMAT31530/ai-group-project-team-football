@@ -140,19 +140,56 @@ def main():
     cur.execute("UPDATE Team SET elo=1000")
 
 
-    karr = []
-    darr = []
-    accarr  = []
+
 
     cur.execute(
         "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match WHERE league_id = '1729'")
     matches = cur.fetchall()
-    trainMatches, testMatches = train_test_split(matches, test_size=0.2)
+    trainMatches, testMatches = train_test_split(matches, test_size=0.4)
+    trainMatches, trainValMatches = train_test_split(trainMatches, test_size = 0.333)
+    testMatches, testValMatches = train_test_split(testMatches,test_size=0.5)
+
+    args = (trainMatches, trainValMatches, cur)
+
+    accArr = []
+    def callback(x, f, context):
+        # print(f"Acc: {1-f}")
+        pbar.set_description(f"Optimising ELO Parameters, Acc.= {1 - f}")
+        accArr.append((1-f) * 100)
+        pbar.update(1)
 
 
+    def func(x, *args):
+        train(x[0], args[0], 1, args[2], x[2], x[3], x[4])
+        acc = test(args[1], x[1], args[2])
+        return 1 - acc
 
-    ks = np.linspace(1,500,200)
-    ds = np.linspace(0,500,200)
+    maxiter = 1000
+    with tqdm(desc=f"Optimising ELO Parameters, Acc.= NaN") as pbar:
+        res = dual_annealing(func, bounds=[(1, 300), (0, 300), (1, 3), (1, 4), (1, 5)], callback=callback,
+                             args=args,
+                             maxiter=maxiter)
+    res = res['x']
+    k = res[0]
+    d = res[1]
+    mult2 = res[2]
+    mult3 = res[3]
+    mult4 = res[4]
+
+    train(k,testMatches,1,cur,mult2,mult3,mult4)
+    testAcc = test(testValMatches,d,cur)
+    print(testAcc)
+
+    iters = [i for i in range(1,len(accArr)+1)]
+    plt.plot(iters,accArr)
+    plt.grid()
+    plt.xlabel('Iteration')
+    plt.ylabel('Percentage Accuracy')
+    plt.show()
+
+    '''
+    ks = np.linspace(1,500,500)
+    ds = np.linspace(0,500,500)
     bestAcc = 0
 
     for k in tqdm(ks):
@@ -161,7 +198,7 @@ def main():
         for d in ds:
             karr.append(k)
             darr.append(d)
-            acc = test(testMatches,d,cur)
+            acc = test(trainValMatches,d,cur)
             if acc > bestAcc:
                 bestAcc = acc
                 bestK = k
@@ -172,6 +209,9 @@ def main():
     print(bestK)
     print(bestD)
 
+    train(bestK,testMatches,1,cur,1,1,1)
+    testAcc = test(testValMatches,bestD,cur)
+    print(testAcc)
 
     x = np.array(karr)
     y = np.array(darr)
@@ -188,7 +228,7 @@ def main():
     plt.xlabel('K')
     plt.ylabel('D')
     plt.show()
-
+    '''
 
 if __name__ == "__main__":
     main()
