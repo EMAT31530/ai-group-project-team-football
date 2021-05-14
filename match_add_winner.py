@@ -14,9 +14,9 @@ for match in matches:
     away_id = match[4]
 
     if home_goal > away_goal:
-        cur.execute(f"UPDATE Match SET winner = {home_id} WHERE id = {match_id}")
+        cur.execute(f"UPDATE Match SET winner = 'home' WHERE id = {match_id}")
     elif away_goal > home_goal:
-        cur.execute(f"UPDATE Match SET winner = {away_id} WHERE id = {match_id}")
+        cur.execute(f"UPDATE Match SET winner = 'away' WHERE id = {match_id}")
     elif home_goal == away_goal:
         cur.execute(f"UPDATE Match SET winner = 'draw' WHERE id = {match_id}")
 

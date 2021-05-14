@@ -73,26 +73,12 @@ def main():
     cur.execute(
         "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match WHERE league_id = '1729'")
     matches = cur.fetchall()
-    trainMatches, testMatches = train_test_split(matches, test_size=0.2)
-    trainMatches, valMatches = train_test_split(trainMatches, test_size=0.2)
 
-    resPath = r"D:\intro2ai\ai-group-project-team-football\res.pkl"
-
-
-    res = optimiseElo(cur, trainMatches, valMatches, useSavedRes= True, useSavedResPath=resPath)
-
-
-    k = res[0]
-    d = res[1]
-    mult2 = res[2]
-    mult3 = res[3]
-    mult4 = res[4]
-
-    train(k, testMatches, 1, cur, mult2, mult3, mult4)
-    acc = test(testMatches, d, cur)
-    print('____')
-    print(acc)
-    print('____')
+    k = 4.849879326548514
+    d = 125.81976547554737
+    mult2 = 2.1342190777850742
+    mult3 = 3.4769118949428233
+    mult4 = 1.143940853285419
 
     train(k, matches, 1, cur, mult2, mult3, mult4, dotqdm=True)
 
@@ -225,7 +211,9 @@ def main():
                                        index=feature_list,
                                        columns=['importance']).sort_values('importance', ascending=False)
 
-    print("RF", rf_feature_importances)
+
+    with pd.option_context('display.max_rows', None):
+        print("rf",rf_feature_importances)
 
 
 

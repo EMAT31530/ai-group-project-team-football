@@ -193,7 +193,7 @@ def main():
         return history,model
 
     t = ta.Scan(x= train_features,y = train_labels,x_val = val_features,y_val = val_labels,
-                          model = football_model,params = p,experiment_name = 'football',round_limit=1000)
+                          model = football_model,params = p,experiment_name = 'football',round_limit=15000)
 
     p = Predict(t)
 
