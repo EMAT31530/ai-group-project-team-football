@@ -1,0 +1,2 @@
+round_epochs,loss,accuracy,val_loss,val_accuracy,activation,batch_size,dropout,epochs,first_neuron,hidden_layers,kernel_initializer,last_neuron,shapes
+106,1.0259931087493896,0.4791773855686188,1.013689637184143,0.533880889415741,relu,1876,0.6175999999999999,500,1702,4,glorot_normal,50,funnel

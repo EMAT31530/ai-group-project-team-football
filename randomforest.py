@@ -12,7 +12,7 @@ from multiprocessing import cpu_count
 from sklearn.preprocessing import MinMaxScaler,LabelBinarizer
 from sklearn.impute import SimpleImputer
 from sqlAttackDefense import setTeamAttackDefence
-
+import matplotlib.pyplot as plt
 
 def setAttackDefence(cur,set=False):
     if set:
@@ -20,15 +20,9 @@ def setAttackDefence(cur,set=False):
     else:
         pass
 
-def baseline_accuracy(test_labels,test_features,feature_list,ohe_home):
-    test_features_df = pd.DataFrame(test_features, columns=feature_list)
-    home = test_features_df.filter(regex = "(.*)_home")
-
-    true = test_labels
-    base_preds = ohe_home.inverse_transform(home.values)
-    base_preds = [pred.replace("_home","") for pred in base_preds]
-
-    baseline_accuracy = metrics.accuracy_score(true,base_preds)*100
+def baseline_accuracy(test_labels):
+    homePred = np.array(['home' for match in test_labels])
+    baseline_accuracy = metrics.accuracy_score(test_labels,homePred)*100
     return baseline_accuracy
 
 
@@ -115,11 +109,12 @@ def main():
         pbar.set_description("Generating DataFrame")
 
         cur.execute(
-            "SELECT winner,home_team_api_id,away_team_api_id,home_team_elo,away_team_elo,home_attack,home_defence,"
+            "SELECT winner,home_team_elo,away_team_elo,home_attack,home_defence,"
             "away_attack,away_defence FROM Match WHERE league_id = '1729'")
         match_data = cur.fetchall()
-        matches_df = pd.DataFrame(match_data, columns=["winner", "home_team", "away_team", "home_elo", "away_elo",
+        matches_df = pd.DataFrame(match_data, columns=["winner","home_elo", "away_elo",
                                                        "home_attack", "home_defence", "away_attack", "away_defence"])
+
 
         '''
         cur.execute("SELECT WHH,WHA,WHD,B365H,B365A,B365D,LBH,LBA,LBD FROM Match WHERE league_id = '1729'")
@@ -133,6 +128,7 @@ def main():
         pbar.update(1)
         pbar.set_description("Normalising Numerical Data")
 
+
         scaler = MinMaxScaler()
         columns_to_norm = ['home_elo', 'away_elo','home_attack','home_defence','away_attack','away_defence'] #+ odds_cols
         x = matches_df[columns_to_norm].values
@@ -144,10 +140,6 @@ def main():
         pbar.update(1)
         pbar.set_description("OneHotEncoding Categorical Data")
 
-        matches_df["winner"] = matches_df["winner"].astype("str")
-        matches_df["home_team"] = matches_df["home_team"].astype("str") + "_home"
-        matches_df["away_team"] = matches_df["away_team"].astype("str") + "_away"
-
         labels = matches_df.filter(items=["winner"])
         lb = LabelBinarizer()
         lb.fit(labels["winner"])
@@ -155,24 +147,11 @@ def main():
         labels = pd.DataFrame(lb_trans, columns=lb.classes_)
         label_list = labels.columns
 
-        ohe_home = LabelBinarizer()
-        ohe_away = LabelBinarizer()
-
         features = matches_df
+        #print(matches_df)
 
-        ohe_home.fit(features["home_team"])
-        ohe_away.fit(features["away_team"])
+        features = matches_df.drop(columns=["winner"])
 
-        ohe_home_trans = ohe_home.transform(features["home_team"])
-        ohe_away_trans = ohe_away.transform(features["away_team"])
-
-        features = matches_df.drop(columns=["winner", "home_team", "away_team"])
-
-        ohe_home_df = pd.DataFrame(ohe_home_trans, columns=ohe_home.classes_)
-        ohe_away_df = pd.DataFrame(ohe_away_trans, columns=ohe_away.classes_)
-
-        features = features.join(ohe_home_df, how="right")
-        features = features.join(ohe_away_df, how="right")
         feature_list = features.columns
 
         labels = np.array(labels).astype('float32')
@@ -181,41 +160,68 @@ def main():
         pbar.update(1)
         pbar.set_description("Splitting Data into Train and Test")
 
-        train_features, test_features, train_labels, test_labels = train_test_split(features, labels, test_size=0.25,random_state=42)
+        train_features, test_features, train_labels, test_labels = train_test_split(features, labels, test_size=0.2)
 
         pbar.set_description("Data Preprocessing Complete")
         pbar.update(1)
 
-
-    rf = RandomForestClassifier(n_estimators=1000,verbose=1, n_jobs=-1)
-
-    rf.fit(train_features, train_labels)
-
-    #joblib.dump(ml, r"D:\intro2ai\ai-group-project-team-football\ml.pkl")
-
-    rf_preds = predict(rf, test_features,lb)
-
+    treesArr = np.linspace(1,10000,50,dtype=int)
+    accArr = []
     test_labels = lb.inverse_transform(test_labels)
 
-    base_acc = baseline_accuracy(test_labels, test_features, feature_list, ohe_home)
+    printStuff = True
 
-    acc = metrics.accuracy_score(test_labels, rf_preds)*100
+    rf_pbar = tqdm(total=len(treesArr))
+    for numTrees in treesArr:
+        rf_pbar.set_description(f'Num. Trees = {numTrees}')
+        rf = RandomForestClassifier(n_estimators=numTrees,verbose=0, n_jobs=-1)
 
-    print('Baseline Accuracy: %.3f' % base_acc)
+        try:
+            rf.fit(train_features, train_labels)
+        except:
+            print(f"Broke at {numTrees}")
+            break
 
-    print('RF Accuracy: %.3f' % acc)
-    diff = (acc - base_acc)
-    print('Model better than baseline by: %.3f pp' % diff)
+        #joblib.dump(ml, r"D:\intro2ai\ai-group-project-team-football\ml.pkl")
 
-    rf_feature_importances = pd.DataFrame(rf.feature_importances_,
-                                       index=feature_list,
-                                       columns=['importance']).sort_values('importance', ascending=False)
+        rf_preds = lb.inverse_transform(rf.predict(test_features))
+
+        acc = metrics.accuracy_score(test_labels,rf_preds)*100
+
+        accArr.append(acc)
+
+        base_acc = baseline_accuracy(test_labels)
+
+        if printStuff:
+            print('Baseline Accuracy: %.3f' % base_acc)
+            print('RF Accuracy: %.3f' % acc)
+            diff = (acc - base_acc)
+            print('Model better than baseline by: %.3f pp' % diff)
 
 
-    with pd.option_context('display.max_rows', None):
-        print("rf",rf_feature_importances)
+
+            rf_feature_importances = pd.DataFrame(rf.feature_importances_,
+                                               index=feature_list,
+                                               columns=['importance']).sort_values('importance', ascending=False)
 
 
+            with pd.option_context('display.max_rows', None):
+                print("rf",rf_feature_importances)
+
+        rf_pbar.update(1)
+
+
+
+    plt.plot(treesArr,accArr,label = 'RF Accuracy')
+
+    #meanAcc = np.mean(accArr)
+    #plt.axhline(y = meanAcc,c = 'r', ls = '--', label = 'Mean RF Accuracy')
+    plt.axhline(y = 46,c = 'k', ls = '--',label = 'Baseline Accuracy')
+    plt.legend()
+    plt.xlabel('Number of Trees')
+    plt.ylabel('Percentage Accuracy')
+    plt.grid()
+    plt.show()
 
 
 if __name__ == '__main__':

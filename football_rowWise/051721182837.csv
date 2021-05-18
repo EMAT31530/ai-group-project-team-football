@@ -1,0 +1,2 @@
+round_epochs,loss,accuracy,val_loss,val_accuracy,activation,batch_size,dropout,epochs,first_neuron,hidden_layers,kernel_initializer,last_neuron,shapes
+36,0.9773134589195251,0.5233933329582214,0.9785561561584473,0.5174537897109985,relu,1876,0.5489999999999999,500,1702,2,glorot_normal,2469,brick

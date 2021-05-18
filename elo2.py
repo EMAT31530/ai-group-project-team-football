@@ -9,6 +9,7 @@ from sklearn.model_selection import train_test_split
 from scipy.optimize import dual_annealing
 
 
+
 def eloUpdate(r1, r2, s1, s2, k,goal1,goal2,mult2,mult3,mult4):  # r1 = team 1 elo, r2 = team 2 elo, s1/2 = 1,0,0.5 depending win/lose/draw
     if goal1 > goal2:
         if goal1 - goal2 == 2:
@@ -24,7 +25,6 @@ def eloUpdate(r1, r2, s1, s2, k,goal1,goal2,mult2,mult3,mult4):  # r1 = team 1 e
             k = mult3*k
         elif goal2 - goal1 >= 4:
             k = k * mult4
-
     R1 = 10 ** (r1 / 400)
     R2 = 10 ** (r2 / 400)
 
@@ -53,10 +53,10 @@ def train(k, traindata, z,cur,mult2,mult3,mult4,dotqdm = False): #data = [match_
         for match in tqdm(traindata,desc = "Training ELOs", total = len(traindata)):
             if match[4] == 'draw':
                 s1 = s2 = 0.5
-            elif match[4] == match[0]:
+            elif match[4] == 'home':
                 s1 = 1
                 s2 = 0
-            elif match[4] == match[1]:
+            elif match[4] == 'away':
                 s1 = 0
                 s2 = 1
             cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[0],))
@@ -66,6 +66,7 @@ def train(k, traindata, z,cur,mult2,mult3,mult4,dotqdm = False): #data = [match_
 
             newElos = eloUpdate(homeTeamElo, awayTeamElo, s1, s2, k, match[2], match[3], mult2, mult3,mult4)
 
+
             cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[0], match[0],))
             cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[1], match[1],))
             i += 1
@@ -73,10 +74,10 @@ def train(k, traindata, z,cur,mult2,mult3,mult4,dotqdm = False): #data = [match_
         for match in traindata:
             if match[4] == 'draw':
                 s1 = s2 = 0.5
-            elif match[4] == match[0]:
+            elif match[4] == 'home':
                 s1 = 1
                 s2 = 0
-            elif match[4] == match[1]:
+            elif match[4] == 'away':
                 s1 = 0
                 s2 = 1
             cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[0],))

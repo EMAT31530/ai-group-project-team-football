@@ -19,18 +19,13 @@ import matplotlib.pyplot as plt
 import talos as ta
 from talos.utils import hidden_layers
 from talos.utils.best_model import best_model
-from talos import Predict, Analyze
+from talos.utils.recover_best_model import recover_best_model
+from talos import Predict, Analyze, Evaluate
 
 
 
 
-
-
-
-
-
-
-def main():
+def main(csv_path, n):
     con = sqlite3.connect(r'C:\Users\Luca\PycharmProjects\IntroToAI-Group5-TeamB(football)\database.sqlite')
     cur = con.cursor()
 
@@ -99,29 +94,10 @@ def main():
 
     train_features, test_features, train_labels, test_labels = train_test_split(features, labels, test_size=0.2)
 
-    train_features, val_features, train_labels, val_labels = train_test_split(train_features, train_labels,test_size=0.2)
+    train_features, val_features, train_labels, val_labels = train_test_split(train_features, train_labels,test_size=0.33)
 
     n_features = train_features.shape[1]
 
-    p = {'shapes': ['brick', 'triangle', 'funnel'],
-         'activation': ['relu'],
-         'kernel_initializer': ['he_normal','glorot_normal','uniform'],
-         'first_neuron': (50,3000,50),
-         'last_neuron': (50,3000,50),
-         'hidden_layers': (0,10,10),
-         'dropout': (0.01,0.99,100),
-         'batch_size': (300,20000,100),
-         'epochs': [500]}
-
-    p_best = {'shapes': ['triangle'],
-             'activation': ['relu'],
-             'kernel_initializer': ['uniform'],
-             'first_neuron': [2823],
-             'last_neuron' : [50],
-             'hidden_layers': [5],
-             'dropout': [0.2354],
-             'batch_size': [694],
-             'epochs': [500]}
 
     def football_model(x_train,y_train,x_val,y_val,params):
         model = Sequential()
@@ -143,22 +119,118 @@ def main():
 
         return history,model
 
-    t = ta.Scan(x= train_features,y = train_labels,x_val = val_features,y_val = val_labels,
-                          model = football_model,params = p_best,experiment_name = 'football',round_limit=1)
 
-    p = Predict(t)
 
-    preds = p.predict(test_features,metric='val_accuracy',asc = False).argmax(axis=1)
+    df = pd.read_csv(csv_path)
 
-    acc = metrics.accuracy_score(test_labels.argmax(axis=1), preds) * 100
+    n = n
 
-    base_acc = baseline_accuracy(test_labels)
+    topn = df.nlargest(n,'val_accuracy')[['val_accuracy','batch_size','activation','kernel_initializer','dropout','first_neuron','hidden_layers','last_neuron','shapes']]
+    best = df.nlargest(1,'val_accuracy')[['val_accuracy','batch_size','activation','kernel_initializer','dropout','first_neuron','hidden_layers','last_neuron','shapes']]
+    print(topn['val_accuracy'])
+    inp = input("gen or test")
 
-    print('Baseline Accuracy: %.3f' % base_acc)
-    print('Test Accuracy: %.3f' % acc)
-    diff = (acc - base_acc)
-    print('Model better than baseline by: %.3f pp' % diff)
+    if inp == 'test':
+        bestAcc = 0
+        lossStop_callback = EarlyStopping(monitor='loss', patience=3)
+        for row in tqdm(topn.itertuples(index = True),total=n):
+            row_index = row[0]
+            row_val_accuracy = row[1]
+            row_batch_size = row[2]
+            row_activation = row[3]
+            row_kernel_initializer = row[4]
+            row_dropout = row[5]
+            row_first_neuron = row[6]
+            row_hidden_layers = row[7]
+            row_last_neuron = row[8]
+            row_shapes = row[9]
+
+            p_row = {'shapes': row_shapes,
+                      'activation': row_activation,
+                      'kernel_initializer': row_kernel_initializer,
+                      'first_neuron': row_first_neuron,
+                      'last_neuron': row_last_neuron,
+                      'hidden_layers': row_hidden_layers,
+                      'dropout': row_dropout,
+                      'batch_size': row_batch_size,
+                      'epochs': 500}
+
+            history, model = football_model(train_features,train_labels,val_features,val_labels,p_row)
+            loss, acc = model.evaluate(test_features, test_labels, batch_size=row_batch_size,verbose=0,callbacks=lossStop_callback)
+            if acc>bestAcc:
+                bestAcc = acc
+                bestLoss = loss
+                bestHistory = history
+
+
+        print(bestAcc)
+
+        plt.plot(bestHistory.history['loss'])
+        plt.plot(bestHistory.history['val_loss'])
+        plt.axhline(y = bestLoss,c = 'k', ls = '--')
+
+        plt.ylabel('Loss')
+        plt.xlabel('Epoch')
+        plt.legend(['Train', 'Validation',f'Test = {bestLoss}'], loc='upper left')
+        plt.grid()
+        plt.show()
+        plt.plot(bestHistory.history['accuracy'])
+        plt.plot(bestHistory.history['val_accuracy'])
+        plt.axhline(y=bestAcc, c='k', ls='--')
+
+        plt.ylabel('Accuracy')
+        plt.xlabel('Epoch')
+        plt.legend(['Train', 'Validation',f'Test = {bestAcc}'], loc='upper left')
+        plt.grid()
+        plt.show()
+
+        bestAcc *= 100
+        base_acc = baseline_accuracy(lb.inverse_transform(test_labels))
+
+        print('Baseline Accuracy: %.3f' % base_acc)
+        print('Test Accuracy: %.3f' % bestAcc)
+        diff = (bestAcc - base_acc)
+        print('Model better than baseline by: %.3f pp' % diff)
+
+
+
+
+
+
+
+    elif inp == 'gen':
+        batch_size_topn = np.unique(np.array(topn['batch_size'])).tolist()
+        activation_topn = np.unique(np.array(topn['activation'])).tolist()
+        kernel_initializer_topn = np.unique(np.array(topn['kernel_initializer'])).tolist()
+        dropout_topn = np.unique(np.array(topn['dropout'])).tolist()
+        first_neuron_topn = np.unique(np.array(topn['first_neuron'])).tolist()
+        hidden_layers_topn = np.unique(np.array(topn['hidden_layers'])).tolist()
+        last_neuron_topn = np.unique(np.array(topn['last_neuron'])).tolist()
+        shapes_topn = np.unique(np.array(topn['shapes'])).tolist()
+
+        p_topn = {'shapes': shapes_topn,
+                     'activation': activation_topn,
+                     'kernel_initializer': kernel_initializer_topn,
+                     'first_neuron': first_neuron_topn,
+                     'last_neuron' : last_neuron_topn,
+                     'hidden_layers': hidden_layers_topn,
+                     'dropout': dropout_topn,
+                     'batch_size': batch_size_topn,
+                     'epochs': [500]}
+
+        t = ta.Scan(x= train_features,y = train_labels,x_val = val_features,y_val = val_labels,
+                              model = football_model,params = p_topn,experiment_name = 'football_best',round_limit=700)
+
+    else:
+        print("Please input either 'gen' or 'test' !!")
+        main(csv_path,n)
 
 
 if __name__ == '__main__':
-    main()
+    csv = r'D:\intro2ai\ai-group-project-team-football\football_best\051721202208.csv'
+    main(csv,20)
+
+
+
+
+
