@@ -2,6 +2,9 @@ from math import *
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import sqlite3
+from sklearn import metrics
+from tqdm import tqdm
 
 def load_points_from_file(filename):
     points = pd.read_csv(filename, header=None)
@@ -18,13 +21,9 @@ def goal_difference(goals_for, goals_against):
     return difference_list
 
 def last_ten_games(difference_list):
-    recent_games = []
-    number_of_games = len(difference_list)
-    for i in range(-10,0):
-        goal_difference = difference_list[number_of_games + i ]
-        recent_games.append(goal_difference)
+    return np.random.choice(difference_list,10,replace=False)
 
-    return recent_games
+
 
 
 def match_result(Difference_list):
@@ -70,6 +69,7 @@ def regression(Recent_games):
     X = np.concatenate((X, new_x))
     y_hat = np.concatenate((y_hat, new_y_hat))
 
+    '''
     plt.plot(X[:, 1], y_hat, c='g', label='Model')
     plt.scatter(new_x[:, 1], new_y_hat,c='r', label='Prediction')
 
@@ -77,35 +77,62 @@ def regression(Recent_games):
     plt.ylabel('Goal Difference')
     plt.legend(loc='best')
     plt.show()
-    
+    '''
 
     return float(new_y_hat[0])
 
 
 def prediction(prediction_home,prediction_away):
     if prediction_home - prediction_away >= 1:
-        print('home win')
+        return 'home'
     if prediction_home - prediction_away <= -1:
-        print('away win')
+        return 'away'
     else:
-        print('draw')
+        return 'draw'
+
+con = sqlite3.connect(r'C:\Users\Luca\PycharmProjects\IntroToAI-Group5-TeamB(football)\database.sqlite')
+cur = con.cursor()
+cur.execute("SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match WHERE league_id = '1729'")
+matches = cur.fetchall()
+
+predArr = []
+trueArr = []
+for match in tqdm(matches):
+    home_team_id = match[0]
+    away_team_id = match[1]
+    home_team_goal = match[2]
+    away_team_goal = match[3]
+    winner = match[4]
+
+    if winner == home_team_id:
+        trueArr.append('home')
+    elif winner == away_team_id:
+        trueArr.append('away')
+    elif winner == 'draw':
+        trueArr.append('draw')
+
+    cur.execute(f"SELECT home_team_goal,away_team_goal FROM Match WHERE home_team_api_id = {home_team_id}")
+    home_goals = np.array(cur.fetchall())
+    cur.execute(f"SELECT away_team_goal,home_team_goal FROM Match WHERE away_team_api_id = {away_team_id}")
+    away_goals = np.array(cur.fetchall())
+
+    goals_for_home = home_goals[:,0]
+    goals_against_home = home_goals[:,1]
+    goals_for_away = away_goals[:,0]
+    goals_against_away = away_goals[:,1]
+
+    home_difference = goal_difference(goals_for_home,goals_against_home)
+    away_difference = goal_difference(goals_for_away,goals_against_away)
+
+    home_recent_games = last_ten_games(home_difference)
+    away_recent_games = last_ten_games(away_difference)
+
+    home_prediction = regression(home_recent_games)
+    away_prediction = regression(away_recent_games)
+
+    match_prediction = prediction(home_prediction,away_prediction)
+    predArr.append(match_prediction)
 
 
-
-home = r'C:\Users\hanlo\Documents\database.sqlite\chelsea_matches.csv'
-goals_for, goals_against = load_points_from_file(home)
-Difference_list = goal_difference(goals_for, goals_against)
-#win_tally, draw_tally, loss_tally = match_result(Difference_list)
-Recent_games = last_ten_games(Difference_list)
-#plt_match_results(win_tally, draw_tally, loss_tally)
-prediction_home =regression(Recent_games)
-
-
-away = r'C:\Users\hanlo\Documents\database.sqlite\arsenal_matches.csv'
-goals_for_away, goals_against_away = load_points_from_file(away)
-difference_list_away = goal_difference(goals_for_away, goals_against_away)
-recent_games_away = last_ten_games(difference_list_away)
-prediction_away= regression(recent_games_away)
-
-
-prediction(prediction_home,prediction_away)
+acc = metrics.accuracy_score(trueArr,predArr)
+print(acc)

@@ -9,7 +9,6 @@ from scipy.optimize import differential_evolution
 
 
 def func(x,*args):
-
     train(x[0],args[0],1,args[2],x[2],x[3],x[4])
     acc = test(args[1],x[1],args[2])
     return -acc

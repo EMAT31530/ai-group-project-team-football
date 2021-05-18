@@ -3,6 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import random
+from tqdm import tqdm
+from sklearn import metrics
+from sklearn.model_selection import train_test_split
+from scipy.optimize import dual_annealing
 
 
 
@@ -13,7 +17,6 @@ def eloUpdate(r1, r2, s1, s2, k,goal1,goal2,mult2,mult3,mult4):  # r1 = team 1 e
         elif goal1 - goal2 == 3:
             k = mult3*k
         elif goal1 - goal2 >= 4:
-            N = goal1 - goal2
             k = k * mult4
     elif goal1 < goal2:
         if goal2 - goal1 == 2:
@@ -21,10 +24,7 @@ def eloUpdate(r1, r2, s1, s2, k,goal1,goal2,mult2,mult3,mult4):  # r1 = team 1 e
         elif goal2 - goal1 == 3:
             k = mult3*k
         elif goal2 - goal1 >= 4:
-            N = goal2 - goal1
             k = k * mult4
-
-
     R1 = 10 ** (r1 / 400)
     R2 = 10 ** (r2 / 400)
 
@@ -45,29 +45,50 @@ def percTrainData(i, traindata,k1,k2,k3):
     return k1
 
 
-def train(k, traindata, z,cur,mult2,mult3,mult4):
+def train(k, traindata, z,cur,mult2,mult3,mult4,dotqdm = False): #data = [match_1,...,match_n], match = [home_id,away_id,home_goal,away_goal,winner]
     if z == 1:
         cur.execute("UPDATE Team SET elo=1000")
     i = 0
-    for match in traindata:
-        #k = percTrainData(i,traindata,k1,k2,k3)
-        if match[3] == match[4]:
-            s1 = s2 = 0.5
-        elif match[3] > match[4]:
-            s1 = 1
-            s2 = 0
-        else:
-            s1 = 0
-            s2 = 1
-        cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[1],))
-        homeTeamElo = cur.fetchall()
-        cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[2],))
-        awayTeamElo = cur.fetchall()
+    if dotqdm:
+        for match in tqdm(traindata,desc = "Training ELOs", total = len(traindata)):
+            if match[4] == 'draw':
+                s1 = s2 = 0.5
+            elif match[4] == 'home':
+                s1 = 1
+                s2 = 0
+            elif match[4] == 'away':
+                s1 = 0
+                s2 = 1
+            cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[0],))
+            homeTeamElo = cur.fetchall()[0][0]
+            cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[1],))
+            awayTeamElo = cur.fetchall()[0][0]
 
-        newElos = eloUpdate(homeTeamElo[0][0], awayTeamElo[0][0], s1, s2, k,match[3],match[4],mult2,mult3,mult4)
-        cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[0], match[1],))
-        cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[1], match[2],))
-        i += 1
+            newElos = eloUpdate(homeTeamElo, awayTeamElo, s1, s2, k, match[2], match[3], mult2, mult3,mult4)
+
+
+            cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[0], match[0],))
+            cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[1], match[1],))
+            i += 1
+    else:
+        for match in traindata:
+            if match[4] == 'draw':
+                s1 = s2 = 0.5
+            elif match[4] == 'home':
+                s1 = 1
+                s2 = 0
+            elif match[4] == 'away':
+                s1 = 0
+                s2 = 1
+            cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[0],))
+            homeTeamElo = cur.fetchall()[0][0]
+            cur.execute("SELECT elo FROM Team where team_api_id = ?", (match[1],))
+            awayTeamElo = cur.fetchall()[0][0]
+
+            newElos = eloUpdate(homeTeamElo, awayTeamElo, s1, s2, k,match[2],match[3],mult2,mult3,mult4)
+            cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[0], match[0],))
+            cur.execute("UPDATE Team SET elo = ? where team_api_id = ?", (newElos[1], match[1],))
+            i += 1
 
 
 def perDiff(val1, val2):
@@ -77,58 +98,36 @@ def perDiff(val1, val2):
     return perDiff
 
 
-def test(testdata, drawThreshold,cur):
-    successCount = 0
-    count = 0
-    predWins = 0
-    predLosses = 0
-    predDraws = 0
-    wins = 0
-    losses = 0
-    draws = 0
-    randCount = 0
-    for match in testdata:
+def test(testdata, drawThreshold,cur):  # testdata = [match_1,...,match_n], match = [home_id,away_id,home_goal,away_goal,winner]
 
-        cur.execute("SELECT elo FROM Team WHERE team_api_id = ?", (match[1],))
+    true = np.empty(shape = len(testdata),dtype=object)
+    predictions = np.empty(shape = len(testdata),dtype=object)
+    i = 0
+    for match in testdata:
+        home_id = str(match[0])
+        away_id = str(match[1])
+        cur.execute("SELECT elo FROM Team WHERE team_api_id = ?", (match[0],))
         homeElo = cur.fetchall()[0][0]
 
-        cur.execute("SELECT elo FROM Team WHERE team_api_id = ?", (match[2],))
+        cur.execute("SELECT elo FROM Team WHERE team_api_id = ?", (match[1],))
         awayElo = cur.fetchall()[0][0]
 
 
         if abs(homeElo - awayElo) < drawThreshold:
-            predDraws += 1
-            pred = 0
+            predictions[i] = home_id
         elif homeElo > awayElo:
-            predWins += 1
-            pred = 1
+            predictions[i] = home_id
         elif homeElo < awayElo:
-            predLosses += 1
-            pred = -1
-        randChoice = randomPred()
-        if match[3] > match[4]:  # home win
-            count += 1
-            wins += 1
-            if randChoice == 1:
-                randCount +=1
-            if pred == 1:
-                successCount += 1
-        elif match[3] < match[4]:  # away win
-            count += 1
-            losses += 1
-            if randChoice == -1:
-                randCount += 1
-            if pred == -1:
-                successCount += 1
-        elif match[3] == match[4]:  # draw
-            count += 1
-            draws += 1
-            if randChoice == 0:
-                randCount +=1
-            if pred == 0:
-                successCount += 1
-    randAcc = (randCount*100)/count
-    accuracy = (successCount * 100) / count
+            predictions[i] = away_id
+
+        if match[4] == match[0]:  # home win
+            true[i] = home_id
+        elif match[4] == match[1]:  # away win
+            true[i] = away_id
+        elif match[4] == 'draw':  # draw
+            true[i] = 'draw'
+        i+=1
+    accuracy = metrics.accuracy_score(true, predictions)
     return accuracy
 
 
@@ -140,77 +139,97 @@ def main():
     cur = con.cursor()
 
     cur.execute("UPDATE Team SET elo=1000")
-    '''cur.execute(
-        "SELECT date,home_team_api_id,away_team_api_id,home_team_goal,away_team_goal FROM Match WHERE id <25000")
-    trainMatches = cur.fetchall()
-    trainMatches.sort(key=lambda x: x[0])'''
-    '''cur.execute(
-        "SELECT date,home_team_api_id,away_team_api_id,home_team_goal,away_team_goal FROM Match WHERE season != '2015/2016'")
-    trainMatches = cur.fetchall()
-    trainMatches.sort(key=lambda x: x[0])'''
 
 
-    '''cur.execute(
-        "SELECT date,home_team_api_id,away_team_api_id,home_team_goal,away_team_goal FROM Match WHERE id > 25000")
-    testMatches = cur.fetchall()'''
+
+
     cur.execute(
-        "SELECT date,home_team_api_id,away_team_api_id,home_team_goal,away_team_goal FROM Match WHERE season = '2015/2016'")
-    Matches = cur.fetchall()
-    Matches.sort(key=lambda x: x[0])
-    trainMatches = Matches[0:2800]
-    testMatches = Matches[-526:]
+        "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match WHERE league_id = '1729'")
+    matches = cur.fetchall()
+    trainMatches, testMatches = train_test_split(matches, test_size=0.4)
+    trainMatches, trainValMatches = train_test_split(trainMatches, test_size = 0.333)
+    testMatches, testValMatches = train_test_split(testMatches,test_size=0.5)
 
-    train(50, trainMatches, 1)
+    args = (trainMatches, trainValMatches, cur)
 
-    cur.execute("SELECT elo FROM Team")
-    teamElos = cur.fetchall()
-    # print(teamElos)
+    accArr = []
+    def callback(x, f, context):
+        # print(f"Acc: {1-f}")
+        pbar.set_description(f"Optimising ELO Parameters, Acc.= {1 - f}")
+        accArr.append((1-f) * 100)
+        pbar.update(1)
 
-    cur.execute("SELECT MAX(elo) FROM Team")
-    maxElo = cur.fetchall()
 
-    cur.execute("SELECT team_long_name FROM Team WHERE elo = ?", (maxElo[0][0],))
-    maxEloTeam = cur.fetchall()
+    def func(x, *args):
+        train(x[0], args[0], 1, args[2], x[2], x[3], x[4])
+        acc = test(args[1], x[1], args[2])
+        return 1 - acc
 
-    acc = test(testMatches,25)
+    maxiter = 1000
+    with tqdm(desc=f"Optimising ELO Parameters, Acc.= NaN") as pbar:
+        res = dual_annealing(func, bounds=[(1, 300), (0, 300), (1, 3), (1, 4), (1, 5)], callback=callback,
+                             args=args,
+                             maxiter=maxiter)
+    res = res['x']
+    k = res[0]
+    d = res[1]
+    mult2 = res[2]
+    mult3 = res[3]
+    mult4 = res[4]
 
-    bestacc = 0
-    bestk = 0
-    bestd = 0
-    karr = []
-    darr = []
-    accarr  = []
-    for i in range(1,5):
+    train(k,testMatches,1,cur,mult2,mult3,mult4)
+    testAcc = test(testValMatches,d,cur)
+    print(testAcc)
 
-        train(i,trainMatches,1)
-        for j in range(1,5):
-            karr.append(i)
-            darr.append(j)
-            acc = test(testMatches,j)
+    iters = [i for i in range(1,len(accArr)+1)]
+    plt.plot(iters,accArr)
+    plt.grid()
+    plt.xlabel('Iteration')
+    plt.ylabel('Percentage Accuracy')
+    plt.show()
+
+    '''
+    ks = np.linspace(1,500,500)
+    ds = np.linspace(0,500,500)
+    bestAcc = 0
+
+    for k in tqdm(ks):
+
+        train(k,trainMatches,1,cur,1,1,1,dotqdm=False)
+        for d in ds:
+            karr.append(k)
+            darr.append(d)
+            acc = test(trainValMatches,d,cur)
+            if acc > bestAcc:
+                bestAcc = acc
+                bestK = k
+                bestD = d
             accarr.append(acc)
-            print(acc)
-            if acc > bestacc:
-                bestacc = acc
-                bestk = i
-                bestd = j
+
+    print(bestAcc)
+    print(bestK)
+    print(bestD)
+
+    train(bestK,testMatches,1,cur,1,1,1)
+    testAcc = test(testValMatches,bestD,cur)
+    print(testAcc)
 
     x = np.array(karr)
     y = np.array(darr)
-
     z = np.array(accarr)
-
 
     cols = np.unique(x).shape[0]
     X = x.reshape(-1,cols)
     Y = y.reshape(-1,cols)
     Z = z.reshape(-1,cols)
-    print(Z)
+
     plt.contourf(X,Y,Z)
     clb = plt.colorbar(plt.contourf(X,Y,Z))
     clb.set_label('Percentage Accuracy')
     plt.xlabel('K')
     plt.ylabel('D')
     plt.show()
+    '''
 
 if __name__ == "__main__":
     main()

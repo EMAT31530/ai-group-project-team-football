@@ -4,10 +4,12 @@ from elo2 import train
 from elo2 import test
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 
-def getProgenitors(num):      #  [k,d,2mult,3mult,4n1,4n2,4n3]
-    ranges = np.asarray([[1, 300], [0,200],[1,3],[1,3],[0,1],[0,5],[0,10]])
+def getProgenitors(num):      #  [k,d,2mult,3mult,4mult]
+    ranges = np.asarray([[1, 300], [0,400],[1,3],[1,4],[1,5]])
     starts = ranges[:, 0]
     widths = ranges[:, 1] - ranges[:, 0]
     progenArr = starts + widths * np.random.random(size=(num, widths.shape[0]))
@@ -23,109 +25,101 @@ def sortedFitness(entities,trainData,testData,cur):
 
     for entity in entities:
         global genNumber
+        '''
         print("Fitness %d/%d:  Gen %d" %(i,len(entities),genNumber))
+        '''
         i+=1
         k = entity[0]
         d = entity[1]
         mult2 = entity[2]
         mult3 = entity[3]
-        mult4_1 = entity[4]
-        mult4_2 = entity[5]
-        mult4_3 = entity[6]
-        train(k,trainData,1,cur,mult2,mult3,mult4_1,mult4_2,mult4_3)
+        mult4 = entity[4]
+
+        train(k,trainData,1,cur,mult2,mult3,mult4,dotqdm=False)
+
+        '''
+        cur.execute("SELECT home_team_api_id from Match WHERE league_id = '1729'")
+        team_ids = cur.fetchall()
+        team_ids = str(tuple(set([team_id[0] for team_id in team_ids])))
+
+        cur.execute(f"SELECT elo FROM Team WHERE team_api_id IN {team_ids}")
+        print(cur.fetchall())
+        '''
+
         acc = test(testData,d,cur)
 
         entityAndAccArr.append([entity,acc])
-    sorted(entityAndAccArr, key=lambda x: x[1])
+
+    entityAndAccArr = sorted(entityAndAccArr,key=lambda x: x[1])
     entityAndAccArr.reverse()
     return entityAndAccArr
 
 
-def breeding(parent1,parent2,mutRate):
+def breeding(parent1,parent2,mutRate,sds):
 
-    k1 = parent1[0]
-    d1 = parent1[1]
-    k2 = parent2[0]
-    d2 = parent2[1]
+    crossPos = random.randint(0,4)
+    if crossPos == 4:
+        child1 = parent1
+        child2 = parent2
+    else:
 
-    mult2_1 = parent1[2]
-    mult3_1 = parent1[3]
-    mult4_1_1 = parent1[4]
-    mult4_2_1 = parent1[5]
-    mult4_3_1 = parent1[6]
+        child1 = np.append(parent1[:crossPos], parent2[crossPos:])
+        child2 = np.append(parent2[:crossPos], parent1[crossPos:])
 
-    mult2_2 = parent2[2]
-    mult3_2 = parent2[3]
-    mult4_1_2 = parent2[4]
-    mult4_2_2 = parent2[5]
-    mult4_3_2 = parent2[6]
-
-    k_bred = (k1+k2)/2
-    d_bred = (d1+d2)/2
-
-    mult2_bred = (mult2_1+mult2_2)/2
-    mult3_bred = (mult3_1+mult3_2)/2
-    mult4_1_bred = (mult4_1_1+mult4_1_2)/2
-    mult4_2_bred =  (mult4_2_1+mult4_2_2)/2
-    mult4_3_bred =  (mult4_3_1+mult4_3_2)/2
-
-
-    child = [k_bred,d_bred,mult2_bred,mult3_bred,mult4_1_bred,mult4_2_bred,mult4_3_bred]
 
     mutChance = random.randrange(0,100)
     if mutChance < mutRate:
-        child = mutate(child)
-    return child
+        child1 = mutate(child1,sds)
+    mutChance = random.randrange(0, 100)
+    if mutChance < mutRate:
+        child2 = mutate(child2,sds)
 
-def mutate(entity):
-    mutAmount = random.uniform(-25,25)
-    multMutAmount = random.uniform(-0.5,0.5)
-    k_mut = entity[0]+mutAmount
-    d_mut = entity[1]+mutAmount
+    return child1,child2
 
-    mult2_mut = entity[2] + multMutAmount
-    mult3_mut = entity[3] + multMutAmount
-    mult4_1_mut = entity[4] + multMutAmount
-    mult4_2_mut = entity[5] + multMutAmount
-    mult4_3_mut = entity[6] + multMutAmount
+def mutate(entity,sds):
 
-    mutant = [k_mut,d_mut,mult2_mut,mult3_mut,mult4_1_mut,mult4_2_mut,mult4_3_mut]
-    return mutant
+    mutPos = random.randint(0,4)
 
+    mutGene = entity[mutPos] + random.uniform(-1*sds[mutPos],sds[mutPos])
+    if mutGene <= 0:
+        mutGene *= -1
 
-def newGen(entitys,trainData, testData,cur,mutrate):
-    trainTest = sortedFitness(entitys,trainData,testData,cur)
-
-    sorted = trainTest
+    entity[mutPos] = mutGene
+    return entity
 
 
-    bestAcc = sorted[0][1]
+def newGen(entities,trainData, testData,cur,mutrate,sds):
+    trainTest = sortedFitness(entities,trainData,testData,cur)
+
+    sorted = np.array(trainTest,dtype=object)
+
+    bestAcc = np.max(sorted[:,1])
+    aveAcc = np.mean(sorted[:,1])
+
     quarterNum = int(len(sorted)/4)
-
-
 
     topQuarter = sorted[0:quarterNum]
 
-    children = getChildren(topQuarter,3*quarterNum,mutrate)
+    children = getChildren(topQuarter,3*quarterNum,mutrate,sds)
 
     noAcc = [ent[0] for ent in topQuarter]
 
-
     newGen = noAcc+children
+    newGen = np.array(newGen)
+
+    return [newGen,bestAcc,aveAcc]
 
 
 
-    return [newGen,bestAcc]
+def getChildren(parents,num,mutrate,sds):
 
-
-
-def getChildren(parents,num,mutrate):
     children = []
-    for i in range(num):
+    for i in range(int(num/2)):
         parent1 = rouletteSelection(parents)[0]
         parent2 = rouletteSelection(parents)[0]
-        child = breeding(parent1,parent2,mutrate)
-        children.append(child)
+        child1,child2 = breeding(parent1,parent2,mutrate,sds)
+        children.append(child1)
+        children.append(child2)
     return children
 
 
@@ -151,21 +145,48 @@ def rouletteSelection(parents):
 def algoIters(progens,numIters,trainData,testData,cur,mutrate):
     pop = progens
 
-    accArr = []
+    aveAccArr = []
+    bestAccArr = []
 
+    prevAcc = 0
+    repCount = 0
+    pbar = tqdm(total=numIters)
+    pbar.set_description(f"Ave. Acc. = n/a, Best Acc. = n/a, k = {pop[0][0]}, d = {pop[0][1]}, mult2 = {pop[0][2]}, mult3 = {pop[0][3]}, mult4 = {pop[0][4]}")
     for i in range(numIters):
-        global genNumber
-        genNumber = i + 1
-        new = newGen(pop,trainData,testData,cur,mutrate)
+
+
+        k_sd = np.std(pop[:, 0])
+        d_sd = np.std(pop[:, 1])
+        m2_sd = np.std(pop[:, 2])
+        m3_sd = np.std(pop[:, 3])
+        m4_sd = np.std(pop[:, 4])
+        popSDs = [k_sd, d_sd, m2_sd, m3_sd, m4_sd]
+
+        new = newGen(pop,trainData,testData,cur,mutrate,popSDs)
+
+
         pop = new[0]
         bestAcc = new[1]
+        aveAcc = new[2]
+
+        pbar.set_description(f"Ave. Acc = {aveAcc}, Best Acc. = {bestAcc}, k = {pop[0][0]}, d = {pop[0][1]}, mult2 = {pop[0][2]}, mult3 = {pop[0][3]}, mult4 = {pop[0][4]}")
+        pbar.update(1)
+        if abs(prevAcc-aveAcc) <= 0.001:
+            repCount+=1
+        else:
+            repCount = 0
+        if repCount == 10:
+            print("Same ave acc for 10 iters --> halt")
+            print(f"Ave. Acc = {aveAcc}, Best Acc. = {bestAcc}, k = {pop[0][0]}, d = {pop[0][1]}, mult2 = {pop[0][2]}, mult3 = {pop[0][3]}, mult4 = {pop[0][4]}")
+            break
+        prevAcc = aveAcc
+
+        bestAccArr.append(bestAcc)
+        aveAccArr.append(aveAcc)
 
 
-        accArr.append(bestAcc)
 
-        print("Generation %d/%d: Best Acc. = %.3f, k = %.3f, d = %.3f, mult2 = %.3f, mult3 = %.3f, mult4_1 = %.3f, mult4_2 = %.3f, mult4_3 = %.3f" %(i+1,numIters,bestAcc,pop[0][0],pop[0][1],pop[0][2],pop[0][3],pop[0][4],pop[0][5],pop[0][6]))
-
-    return accArr
+    return bestAccArr,aveAccArr, [pop[0][0],pop[0][1],pop[0][2],pop[0][3],pop[0][4]]
 
 
 
@@ -173,22 +194,36 @@ con = sqlite3.connect(r'C:\Users\Luca\PycharmProjects\IntroToAI-Group5-TeamB(foo
 cur = con.cursor()
 cur.execute("UPDATE Team SET elo=1000")
 cur.execute(
-    "SELECT date,home_team_api_id,away_team_api_id,home_team_goal,away_team_goal FROM Match WHERE season != '2015/2016'")
-trainMatches = cur.fetchall()
-trainMatches.sort(key=lambda x: x[1])
-cur.execute(
-       "SELECT date,home_team_api_id,away_team_api_id,home_team_goal,away_team_goal FROM Match WHERE id > 25000")
-testMatches = cur.fetchall()
+        "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match WHERE league_id = '1729'")
+matches = cur.fetchall()
+
+trainMatches, testMatches = train_test_split(matches, test_size=0.4)
+trainMatches, trainValMatches = train_test_split(trainMatches, test_size = 0.333)
+testMatches, testValMatches = train_test_split(testMatches,test_size=0.5)
 
 
+progens = getProgenitors(800)
 
-progens = getProgenitors(200)
+bestAccs,aveAccs, valArr = algoIters(progens,100,trainMatches,trainValMatches,cur,10)
 
+k = valArr[0]
+d = valArr[1]
+mult2 = valArr[2]
+mult3 = valArr[3]
+mult4 = valArr[4]
 
-arrs = algoIters(progens,50,trainMatches,testMatches,cur,20)
+train(k,testMatches,1,cur,mult2,mult3,mult4)
+testAcc = test(testValMatches,d,cur)
 
-plt.plot(arrs)
+print(f"Test. Acc for best params. = {testAcc}")
 
+plt.plot([100*acc for acc in bestAccs],label = 'Best Generational Accuracy')
+plt.plot([100*acc for acc in aveAccs],label = 'Average Generational Accuracy')
+plt.legend()
+plt.grid()
+plt.xlabel('Generation')
+plt.xticks(range(0,len(bestAccs),2))
+plt.ylabel('Percentage Accuracy')
 plt.show()
 
 
