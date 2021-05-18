@@ -161,9 +161,11 @@ def main(csv_path, n):
                 bestAcc = acc
                 bestLoss = loss
                 bestHistory = history
+                best_p = p_row
 
 
         print(bestAcc)
+        print(p_row)
 
         plt.plot(bestHistory.history['loss'])
         plt.plot(bestHistory.history['val_loss'])

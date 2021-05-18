@@ -5,11 +5,17 @@ from elo2 import test
 import joblib
 import numpy as np
 from sklearn.impute import SimpleImputer
+import sqlite3
 from sklearn.model_selection import train_test_split
 
-i  = input()
-if i == 'a':
-    print("aaa")
+con = sqlite3.connect(r'C:\Users\Luca\PycharmProjects\IntroToAI-Group5-TeamB(football)\database.sqlite')
+cur = con.cursor()
+
+cur.execute(
+        "SELECT home_team_api_id,away_team_api_id,home_team_goal,away_team_goal,winner FROM Match WHERE league_id = '1729'")
+matches = cur.fetchall()
+print(len(matches))
+
 
 '''
 cur.execute(("SELECT winner,season,home_team_api_id,away_team_api_id FROM Match"))
